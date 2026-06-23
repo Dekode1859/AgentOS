@@ -1,35 +1,49 @@
-# Job Search OS (scaffold)
+# Job Search OS
 
-A future AgentOS application. **This is an empty scaffold only** — no agents,
-tools, schemas, or logic are implemented yet (per the agreed scope of this
-extraction pass).
+An AgentOS application. It consumes the **same unmodified Core** as Learning OS,
+proving the swapability boundary — but ships its **own UI** (an About Me
+dashboard) via `AppConfig.ui_dir` instead of the shared chat UI.
 
-It exists to prove the AgentOS Core boundary: a second app will consume the
-*same* unmodified Core via the same `AppConfig` contract that Learning OS uses.
+## V0 — About Me (built)
 
-## Planned shape (not built)
+The first surface: a Profile workspace.
 
+- **Ingest** — drop/upload `.txt` / `.md` / `.json`, or paste résumé text.
+  Uploaded docs are stored in `workspace/documents/`.
+- **Extract** — "Generate About Me" sends the documents to the `profile` agent
+  (`opencode.json`), which writes a structured profile to
+  `workspace/profile/profile.json` following `schemas/profile.schema.json`.
+- **Render & edit** — the profile renders as a card (name, summary, skills,
+  experience, projects, certifications, education). Edit the JSON and save.
+
+The extraction is driven from the app's JS via OpenCode's synchronous
+`POST /session/{id}/message` endpoint; the agent writes the file and the UI reads
+it back (no prose-to-JSON parsing). If reading fails, the page falls back to an
+editable empty schema so it's always usable.
+
+### V0 limitations
+- Text inputs only (`.txt`/`.md`/`.json` or pasted). **PDF/DOCX is the planned
+  fast-follow** (needs a Python-side parser + a small Core bridge extension).
+
+## Run
+
+```bash
+make install
+make auth-setup     # add a provider credential (isolated to .opencode-home/)
+make run
 ```
-jobsearch-os/
-├── main.py            # constructs AppConfig + agentos.run()  (TODO)
-├── opencode.json      # profile-agent, matching-agent, ...     (TODO)
-├── agents/            # domain agent prompts                    (TODO)
-├── tools/             # domain tools: parse_resume, ...         (TODO)
-├── schemas/           # profile / job / application JSON        (TODO)
-├── prompts/           # job-specific prompts                    (TODO)
-├── ui/                # any app-specific view overrides         (TODO)
-└── workspace/         # jobs/ profiles/ applications/           (TODO)
-```
 
-## Roadmap (from the spec, future work)
+Requires the `opencode` CLI on PATH.
 
-- **V0** — Profile workspace: upload résumé, extract to the profile schema,
-  edit + persist.
-- **V1** — Manual job import: paste a job description, normalize to the job
-  schema, store locally.
-- **V2** — Matching: score a profile against a job, surface strengths / gaps /
-  résumé suggestions.
+## How it consumes Core
 
-When built, `main.py` will mirror `apps/learning-os/main.py`: add `core/` to the
-path, declare an `AppConfig` (different folders, agents, branding), and call
-`agentos.run()`. **Core will not change.**
+`main.py` adds the sibling `core/` to `sys.path`, declares an `AppConfig` (its
+own folders, agent, branding, and `ui_dir="ui"`), and calls `agentos.run(APP)`.
+Core gained exactly one generic field for this — `ui_dir` — and otherwise did not
+change. Learning OS still uses the shared chat UI unchanged.
+
+## Roadmap (future)
+- **V1** — Manual job import (paste a job → normalize to a job schema → store).
+- **V2** — Matching (profile × job → score, strengths, gaps, résumé suggestions).
+- A shared "views" system (or a chat panel) when matching/application agents
+  need conversational infrastructure.

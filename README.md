@@ -76,4 +76,13 @@ file references any app — see `docs/architecture-audit.md`.
 - ✅ Phase 1 — Architecture audit
 - ✅ Phase 2 — AgentOS Core extracted (domain-clean)
 - ✅ Phase 3 — Learning OS migrated onto Core; parity checklist
-- ▫️ Phase 4 — Job Search OS: scaffold only (V0/V1/V2 are future work)
+- 🟡 Phase 4 — Job Search OS **V0 (About Me) built**: own-UI app on the same
+  Core, résumé ingest → `profile` agent → schema → render/edit. V1 (job import)
+  and V2 (matching) are future work.
+
+### Core extension for V0 (one generic field)
+
+Job Search OS ships its own front-end, so Core gained a single generic field:
+`AppConfig.ui_dir`. When set, the shell serves that directory instead of the
+shared chat UI. Learning OS leaves it unset → unchanged. No domain words entered
+Core; the swap invariant still holds.

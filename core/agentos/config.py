@@ -41,6 +41,13 @@ class AppConfig:
     app_title: str                       # window title + UI header
     app_root: Path                       # app dir: holds opencode.json + workspace
 
+    # Optional: an application may ship its own front-end (its own index.html +
+    # assets). When set, Core serves this directory instead of the built-in chat
+    # UI. The app's UI still uses the same generic bridge + OpenCode API. Leaving
+    # it unset (the default) keeps the shared chat UI — so existing apps are
+    # unaffected and the swap invariant holds.
+    ui_dir: Path | None = None
+
     workspace_dirname: str = "workspace"          # data root dir name under app_root
     workspace_folders: tuple[WorkspaceFolder, ...] = ()  # taxonomy (app-defined)
     default_capture_folder: str = ""              # where ad-hoc notes are written
@@ -55,6 +62,10 @@ class AppConfig:
 
     def __post_init__(self):
         self.app_root = Path(self.app_root)
+        if self.ui_dir is not None:
+            ui = Path(self.ui_dir)
+            # Resolve a relative ui_dir against the app root.
+            self.ui_dir = ui if ui.is_absolute() else (self.app_root / ui)
 
     # Convenience for Core internals — still no domain knowledge.
     def folder_names(self) -> list[str]:

@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Candidate Profile",
+  "description": "Deterministic shape for the About Me profile. The `profile` agent must emit exactly these keys; the UI renders against this shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "summary", "skills", "experience", "projects", "certifications", "education"],
+  "properties": {
+    "name": { "type": "string" },
+    "headline": { "type": "string" },
+    "summary": { "type": "string" },
+    "location": { "type": "string" },
+    "contact": {
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "links": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "skills": { "type": "array", "items": { "type": "string" } },
+    "experience": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "company": { "type": "string" },
+          "start": { "type": "string" },
+          "end": { "type": "string" },
+          "highlights": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "tech": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "certifications": { "type": "array", "items": { "type": "string" } },
+    "education": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "degree": { "type": "string" },
+          "institution": { "type": "string" },
+          "year": { "type": "string" }
+        }
+      }
+    }
+  }
+}

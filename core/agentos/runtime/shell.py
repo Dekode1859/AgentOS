@@ -87,7 +87,8 @@ def run(config: AppConfig):
 
     bridge = Bridge(config, opencode)
 
-    ui_dir = str(paths.resource_path("ui"))
+    # Serve the app's own UI if it provides one; otherwise the shared chat UI.
+    ui_dir = str(config.ui_dir) if config.ui_dir else str(paths.resource_path("ui"))
     ui_port = _start_ui_server(ui_dir)
 
     window = webview.create_window(

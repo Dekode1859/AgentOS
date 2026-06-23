@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en" class="sl-theme-dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Job Search OS</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.19.1/cdn/themes/dark.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Sidebar nav ──────────────────────────────────────── -->
+  <aside id="sidebar">
+    <div class="brand">
+      <sl-icon library="lucide" name="briefcase"></sl-icon>
+      <span>Job Search OS</span>
+    </div>
+    <nav id="nav">
+      <button class="nav-item active" data-view="about">
+        <sl-icon library="lucide" name="user-round"></sl-icon><span>About Me</span>
+      </button>
+      <button class="nav-item" data-view="jobs" disabled>
+        <sl-icon library="lucide" name="list"></sl-icon><span>Jobs</span>
+        <span class="soon">soon</span>
+      </button>
+      <button class="nav-item" data-view="matches" disabled>
+        <sl-icon library="lucide" name="sparkles"></sl-icon><span>Matches</span>
+        <span class="soon">soon</span>
+      </button>
+    </nav>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────── -->
+  <main id="main">
+
+    <!-- About Me view -->
+    <section id="view-about" class="view active">
+      <header class="view-header">
+        <h1>About Me</h1>
+        <p class="view-sub">Add your résumé and documents — we'll build a profile you can edit.</p>
+      </header>
+
+      <div class="about-grid">
+
+        <!-- Documents / ingest -->
+        <div class="panel" id="docs-panel">
+          <div class="panel-title">
+            <sl-icon library="lucide" name="file-text"></sl-icon> Documents
+          </div>
+
+          <label id="dropzone" for="file-input">
+            <sl-icon library="lucide" name="upload-cloud"></sl-icon>
+            <span class="dz-main">Drop files or click to upload</span>
+            <span class="dz-sub">.txt, .md, .json — multiple allowed</span>
+          </label>
+          <input id="file-input" type="file" multiple accept=".txt,.md,.json,.markdown" hidden />
+
+          <div class="paste-wrap">
+            <div class="paste-label">…or paste résumé text</div>
+            <textarea id="paste-text" placeholder="Paste your résumé / bio here"></textarea>
+          </div>
+
+          <div id="doc-list"></div>
+
+          <sl-button id="btn-generate" variant="primary" size="medium" disabled>
+            <sl-icon slot="prefix" library="lucide" name="wand-2"></sl-icon>
+            Generate About Me
+          </sl-button>
+          <div id="gen-status" class="gen-status hidden"></div>
+        </div>
+
+        <!-- Profile card -->
+        <div class="panel" id="profile-panel">
+          <div class="panel-title">
+            <sl-icon library="lucide" name="id-card"></sl-icon> Profile
+            <div class="panel-actions">
+              <sl-button id="btn-edit" size="small" class="hidden">
+                <sl-icon slot="prefix" library="lucide" name="pencil"></sl-icon> Edit
+              </sl-button>
+              <sl-button id="btn-save" size="small" variant="primary" class="hidden">
+                <sl-icon slot="prefix" library="lucide" name="check"></sl-icon> Save
+              </sl-button>
+            </div>
+          </div>
+          <div id="profile-body">
+            <div id="profile-empty" class="empty">
+              <sl-icon library="lucide" name="user-round" class="empty-icon"></sl-icon>
+              <div class="empty-title">No profile yet</div>
+              <div class="empty-sub">Upload or paste a résumé, then click “Generate About Me”.</div>
+            </div>
+            <div id="profile-card" class="hidden"></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Placeholder views (future) -->
+    <section id="view-jobs" class="view"><div class="view-placeholder">Jobs — coming soon.</div></section>
+    <section id="view-matches" class="view"><div class="view-placeholder">Matches — coming soon.</div></section>
+
+  </main>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<script type="module">
+import { registerIconLibrary } from 'https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.19.1/cdn/utilities/icon-library.js';
+registerIconLibrary('lucide', {
+  resolver: name => `https://cdn.jsdelivr.net/npm/lucide-static@0.441.0/icons/${name}.svg`,
+  mutator: svg => svg.setAttribute('stroke', 'currentColor'),
+});
+</script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.19.1/cdn/shoelace-autoloader.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

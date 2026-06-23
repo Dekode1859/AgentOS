@@ -1,0 +1,17 @@
+[project]
+name = "jobsearch-os"
+version = "0.1.0"
+description = "Job Search OS — an AgentOS application (V0: profile / About Me)"
+requires-python = ">=3.11"
+dependencies = [
+    "pywebview>=4.4.0",
+    "requests>=2.31.0",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.0",
+]
+
+[tool.uv]
+package = false
