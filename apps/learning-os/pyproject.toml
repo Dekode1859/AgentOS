@@ -1,0 +1,17 @@
+[project]
+name = "learning-os"
+version = "0.1.0"
+description = "Learning OS — an AgentOS application for LLM-driven personal learning"
+requires-python = ">=3.11"
+dependencies = [
+    "pywebview>=4.4.0",
+    "requests>=2.31.0",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.0",
+]
+
+[tool.uv]
+package = false

@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Builds
+build/
+dist/
+*.spec
+
+# Secrets / local state
+.env
+.opencode-home/
+
+# Tooling caches (carried over from the reference repo)
+.memsearch/
+.ckb/
