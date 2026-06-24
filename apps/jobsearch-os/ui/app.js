@@ -7,6 +7,8 @@ const state = {
   docs: [],          // [{ name, path }] uploaded into workspace/documents
   profile: null,     // parsed profile.json
   editing: false,
+  defaultModel: '',  // "providerID/modelID" currently configured
+  providers: { featured: [], connected: [] },
 };
 
 const PROFILE_PATH = 'profile/profile.json';
@@ -31,6 +33,10 @@ const bridge = (() => {
     workspaceRead:    (path)         => call('workspace_read', path),
     workspaceWrite:   (path, text)   => call('workspace_write', path, text),
     workspaceDelete:  (path)         => call('workspace_delete', path),
+    getProviders:     ()             => call('get_providers'),
+    saveProviderKey:  (pid, key)     => call('save_provider_key', pid, key),
+    removeProviderKey:(pid)          => call('remove_provider_key', pid),
+    setDefaultModel:  (pid, mid)     => call('set_default_model', pid, mid),
   };
 })();
 
@@ -293,6 +299,157 @@ async function saveProfile() {
   }
 }
 
+// ── Settings: providers + model ──────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('settings-dialog').show();
+  loadProviders();
+}
+
+async function loadProviders() {
+  try {
+    const data = await bridge.getProviders();
+    state.providers.featured = data.featured || [];
+    state.providers.connected = data.connected || [];
+    renderConnected();
+    populateProviderSelect();
+    populateModelProviderSelect();
+  } catch (e) {
+    setAuthStatus('err', 'Failed to load providers');
+  }
+}
+
+function renderConnected() {
+  const el = document.getElementById('connected-list');
+  // OpenCode Zen is always connected and needs no key — don't list it as removable.
+  const connected = state.providers.connected.filter(id => id !== 'opencode');
+  if (!connected.length) {
+    el.innerHTML = '<span class="settings-hint">No keyed providers connected yet.</span>';
+    return;
+  }
+  el.innerHTML = connected.map(id => {
+    const p = state.providers.featured.find(x => x.id === id);
+    return `<div class="provider-tag">
+      <span class="provider-dot"></span>
+      <span>${escHtml(p ? p.name : id)}</span>
+      <button class="provider-tag-remove" data-pid="${escAttr(id)}" title="Disconnect">&times;</button>
+    </div>`;
+  }).join('');
+}
+
+function populateProviderSelect() {
+  const sel = document.getElementById('provider-select');
+  // Providers that take an API key (exclude the keyless OpenCode Zen).
+  const keyed = state.providers.featured.filter(p => p.id !== 'opencode');
+  sel.innerHTML = keyed.map(p => {
+    const on = state.providers.connected.includes(p.id);
+    return `<sl-option value="${escAttr(p.id)}">${escHtml(p.name)}${on ? ' ✓' : ''}</sl-option>`;
+  }).join('');
+}
+
+function populateModelProviderSelect() {
+  const sel = document.getElementById('model-provider');
+  // Any connected provider can supply a model — including free OpenCode Zen.
+  const usable = state.providers.featured.filter(p => state.providers.connected.includes(p.id));
+  sel.innerHTML = '<sl-option value="">— provider —</sl-option>' +
+    usable.map(p => `<sl-option value="${escAttr(p.id)}">${escHtml(p.name)}</sl-option>`).join('');
+  const modelSel = document.getElementById('model-select');
+  modelSel.innerHTML = '<sl-option value="">— pick a provider —</sl-option>';
+  modelSel.disabled = true;
+  document.getElementById('btn-set-model').disabled = true;
+}
+
+function updateModelSelectForProvider(pid) {
+  const modelSel = document.getElementById('model-select');
+  const btn = document.getElementById('btn-set-model');
+  if (!pid) {
+    modelSel.innerHTML = '<sl-option value="">— pick a provider —</sl-option>';
+    modelSel.disabled = true; btn.disabled = true; return;
+  }
+  const p = state.providers.featured.find(x => x.id === pid);
+  const models = (p && p.models) || [];
+  modelSel.innerHTML = '<sl-option value="">— model —</sl-option>' +
+    models.map(m => `<sl-option value="${escAttr(m.id)}">${escHtml(m.name || m.id)}</sl-option>`).join('');
+  modelSel.disabled = false;
+  btn.disabled = true;
+}
+
+async function saveKey() {
+  const pid = document.getElementById('provider-select').value;
+  const input = document.getElementById('api-key');
+  const key = input.value.trim();
+  if (!pid) { setAuthStatus('err', 'Pick a provider first.'); return; }
+  if (!key) { setAuthStatus('err', 'Enter an API key.'); return; }
+
+  const btn = document.getElementById('btn-save-key');
+  btn.loading = true;
+  setAuthStatus('info', 'Saving key and restarting the engine…');
+  try {
+    const res = await bridge.saveProviderKey(pid, key);
+    if (!res.ok) throw new Error(res.error || 'Unknown error');
+    state.port = res.port;          // server restarted on a new port
+    input.value = '';
+    setAuthStatus('ok', 'Connected.');
+    await loadProviders();
+  } catch (e) {
+    setAuthStatus('err', e.message);
+  } finally {
+    btn.loading = false;
+  }
+}
+
+async function removeKey(pid) {
+  setAuthStatus('info', 'Removing credentials and restarting…');
+  try {
+    const res = await bridge.removeProviderKey(pid);
+    if (!res.ok) throw new Error(res.error);
+    state.port = res.port;
+    setAuthStatus('ok', 'Disconnected.');
+    await loadProviders();
+  } catch (e) {
+    setAuthStatus('err', e.message);
+  }
+}
+
+async function setModel() {
+  const pid = document.getElementById('model-provider').value;
+  const mid = document.getElementById('model-select').value;
+  if (!pid || !mid) { setModelStatus('err', 'Pick both provider and model.'); return; }
+  const btn = document.getElementById('btn-set-model');
+  btn.loading = true;
+  setModelStatus('info', 'Writing config and restarting…');
+  try {
+    const res = await bridge.setDefaultModel(pid, mid);
+    if (!res.ok) throw new Error(res.error);
+    state.port = res.port;
+    state.defaultModel = res.model;
+    setModelStatus('ok', `Model set: ${res.model}`);
+    updateModelBadge();
+  } catch (e) {
+    setModelStatus('err', e.message);
+  } finally {
+    btn.loading = false;
+  }
+}
+
+function setAuthStatus(type, msg) {
+  const el = document.getElementById('auth-status');
+  el.className = `status-text${type ? ` status-${type}` : ''}`;
+  el.textContent = msg;
+}
+function setModelStatus(type, msg) {
+  const el = document.getElementById('model-status');
+  el.className = `status-text${type ? ` status-${type}` : ''}`;
+  el.textContent = msg;
+}
+
+function updateModelBadge() {
+  const el = document.getElementById('model-badge-text');
+  const cur = document.getElementById('current-model');
+  const label = state.defaultModel ? state.defaultModel.split('/').pop() : '—';
+  if (el) el.textContent = label;
+  if (cur) cur.textContent = state.defaultModel || '—';
+}
+
 // ── View switching ───────────────────────────────────────────────────────────
 function switchView(view) {
   document.querySelectorAll('.nav-item').forEach(b =>
@@ -344,6 +501,21 @@ function wire() {
     const item = e.target.closest('.nav-item');
     if (item && !item.disabled) switchView(item.dataset.view);
   });
+
+  // Settings
+  document.getElementById('btn-settings').addEventListener('click', openSettings);
+  document.getElementById('btn-settings-close').addEventListener('click',
+    () => document.getElementById('settings-dialog').hide());
+  document.getElementById('btn-save-key').addEventListener('click', saveKey);
+  document.getElementById('btn-set-model').addEventListener('click', setModel);
+  document.getElementById('connected-list').addEventListener('click', e => {
+    const btn = e.target.closest('.provider-tag-remove');
+    if (btn) removeKey(btn.dataset.pid);
+  });
+  document.getElementById('model-provider').addEventListener('sl-change', e =>
+    updateModelSelectForProvider(e.target.value));
+  document.getElementById('model-select').addEventListener('sl-change', e =>
+    document.getElementById('btn-set-model').disabled = !e.target.value);
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────────
@@ -358,9 +530,11 @@ async function init() {
     const config = await bridge.getConfig();
     state.config = config;
     state.port = config.opencode_port;
+    state.defaultModel = config.default_model || '';
     document.title = config.app_title || 'Job Search OS';
     const brand = document.querySelector('.brand span');
     if (brand) brand.textContent = config.app_title || 'Job Search OS';
+    updateModelBadge();
   } catch (e) {
     showToast('Failed to connect to backend');
     return;

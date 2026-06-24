@@ -30,6 +30,16 @@
         <span class="soon">soon</span>
       </button>
     </nav>
+
+    <div id="sidebar-footer">
+      <div id="model-badge" title="Active model">
+        <sl-icon library="lucide" name="cpu"></sl-icon>
+        <span id="model-badge-text">—</span>
+      </div>
+      <button class="nav-item" id="btn-settings">
+        <sl-icon library="lucide" name="settings"></sl-icon><span>Settings</span>
+      </button>
+    </div>
   </aside>
 
   <!-- ── Main ─────────────────────────────────────────────── -->
@@ -103,6 +113,43 @@
 
   </main>
 </div>
+
+<!-- ── Settings dialog ──────────────────────────────────── -->
+<sl-dialog id="settings-dialog" label="Settings" style="--width: 540px">
+
+  <div class="settings-section">
+    <h3><sl-icon library="lucide" name="key-round"></sl-icon> Providers</h3>
+    <p class="settings-hint">Connect an LLM provider so the agent can run. OpenCode Zen is free and needs no key.</p>
+    <div id="connected-list"></div>
+    <div class="settings-row">
+      <sl-select id="provider-select" placeholder="Choose a provider" hoist></sl-select>
+    </div>
+    <div class="settings-row">
+      <sl-input id="api-key" type="password" placeholder="API key" password-toggle></sl-input>
+      <sl-button id="btn-save-key" variant="primary">
+        <sl-icon slot="prefix" library="lucide" name="plug"></sl-icon> Connect
+      </sl-button>
+    </div>
+    <div id="auth-status" class="status-text"></div>
+  </div>
+
+  <div class="settings-divider"></div>
+
+  <div class="settings-section">
+    <h3><sl-icon library="lucide" name="cpu"></sl-icon> Model</h3>
+    <p class="settings-hint">Pick the model the profile agent uses. Current: <strong id="current-model">—</strong></p>
+    <div class="settings-row">
+      <sl-select id="model-provider" placeholder="Provider" hoist></sl-select>
+      <sl-select id="model-select" placeholder="Model" hoist disabled></sl-select>
+    </div>
+    <sl-button id="btn-set-model" variant="primary" disabled>
+      <sl-icon slot="prefix" library="lucide" name="check"></sl-icon> Set as default
+    </sl-button>
+    <div id="model-status" class="status-text"></div>
+  </div>
+
+  <sl-button slot="footer" id="btn-settings-close">Close</sl-button>
+</sl-dialog>
 
 <div id="toast" class="hidden"></div>
 

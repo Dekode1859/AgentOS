@@ -29,11 +29,23 @@ editable empty schema so it's always usable.
 
 ```bash
 make install
-make auth-setup     # add a provider credential (isolated to .opencode-home/)
 make run
 ```
 
-Requires the `opencode` CLI on PATH.
+Requires the `opencode` CLI on PATH. **No key setup needed to start** — the app
+defaults to a free OpenCode Zen model (`opencode/mimo-v2.5-free`).
+
+### Settings (in-app)
+
+Click **Settings** in the sidebar to:
+- **Connect a provider** — paste an API key (Anthropic, OpenAI, …); the engine
+  restarts automatically. Keys are stored in the app-local `.opencode-home/`.
+- **Pick the model** — choose any connected provider + model (including the free
+  OpenCode Zen models that need no key) and set it as the default.
+
+This replaces the old `make auth-setup` CLI flow. (That target still exists for
+scripting, but you no longer need it.) The active model is shown above the
+Settings button.
 
 ## How it consumes Core
 

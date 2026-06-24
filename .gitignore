@@ -16,3 +16,6 @@ dist/
 # Tooling caches (carried over from the reference repo)
 .memsearch/
 .ckb/
+
+# macOS
+.DS_Store
