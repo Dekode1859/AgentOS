@@ -12,6 +12,8 @@ const state = {
   jobs: [],           // persisted job list (jobs/jobs.json)
   activeJobId: null,  // job open in detail view
   browser: { port: null, jobId: null }, // Playwright application browser session
+  browserProfileExists: false,           // true only after Google login is confirmed
+  browserProfileEmail: null,             // Google account email from profile-meta.json
 };
 
 const PROFILE_PATH = 'profile/profile.json';
@@ -45,9 +47,13 @@ const bridge = (() => {
     removeProviderKey:(pid)          => call('remove_provider_key', pid),
     setDefaultModel:  (pid, mid)     => call('set_default_model', pid, mid),
     exportResumePdf:  (html, fname)  => call('export_resume_pdf', html, fname),
-    browserOpen:         (url) => call('browser_open', url),
-    browserClose:        ()    => call('browser_close'),
-    browserDetectFields: ()    => call('browser_detect_fields'),
+    browserOpen:              (url) => call('browser_open', url),
+    browserClose:             ()    => call('browser_close'),
+    browserDetectFields:      ()    => call('browser_detect_fields'),
+    browserGetProfileStatus:  ()    => call('browser_get_profile_status'),
+    browserSetupProfile:      ()    => call('browser_setup_profile'),
+    browserCheckGoogleLogin:  ()    => call('browser_check_google_login'),
+    browserResetProfile:      ()    => call('browser_reset_profile'),
   };
 })();
 
@@ -1290,7 +1296,54 @@ function renderApplicationTab(job) {
   if (!el) return;
   const url      = job?.link || '';
   const hasDraft = !!job?.resume_draft;
-  const isOpen   = !!state.browser.port;
+  // Distinguish: setup session vs normal job session vs no session
+  const isSetup  = !!(state.browser.port && state.browser.jobId === '__setup__');
+  const isOpen   = !!(state.browser.port && state.browser.jobId !== '__setup__');
+
+  let ctrlHtml = '';
+  if (isSetup) {
+    ctrlHtml = `
+      <div class="app-setup-active">
+        <sl-icon library="lucide" name="log-in" style="font-size:22px;color:var(--accent)"></sl-icon>
+        <p class="app-setup-msg">Sign in with your Google account in the browser window, then click <strong>Confirm Account</strong> below.</p>
+        <button class="app-ctrl-btn app-ctrl-primary" id="btn-confirm-google-login">
+          <sl-icon library="lucide" name="check-circle"></sl-icon> Confirm Account
+        </button>
+        <button class="app-ctrl-btn app-ctrl-ghost" id="btn-cancel-setup">
+          Cancel
+        </button>
+      </div>`;
+  } else if (isOpen) {
+    ctrlHtml = `
+      <div class="app-url-strip">
+        <sl-icon library="lucide" name="globe" class="app-url-icon"></sl-icon>
+        <span id="app-current-url" class="app-url-val">—</span>
+      </div>
+      <button class="app-ctrl-btn app-ctrl-primary" id="btn-focus-browser">
+        <sl-icon library="lucide" name="focus"></sl-icon> Focus
+      </button>
+      <button class="app-ctrl-btn app-ctrl-ghost" id="btn-navigate-browser">
+        <sl-icon library="lucide" name="rotate-ccw"></sl-icon> Reset URL
+      </button>
+      <button class="app-ctrl-btn app-ctrl-danger" id="btn-close-app-browser">
+        <sl-icon library="lucide" name="x"></sl-icon> Close
+      </button>`;
+  } else if (url && state.browserProfileExists) {
+    ctrlHtml = `
+      <button class="app-ctrl-btn app-ctrl-primary" id="btn-open-app-browser">
+        <sl-icon library="lucide" name="external-link"></sl-icon> Open Application
+      </button>`;
+  } else if (url) {
+    ctrlHtml = `
+      <div class="app-setup-prompt">
+        <p class="app-setup-msg">Set up your browser account to stay logged in across applications.</p>
+        <button class="app-ctrl-btn app-ctrl-primary" id="btn-setup-profile-inline">
+          <sl-icon library="lucide" name="log-in"></sl-icon> Set up Browser Account
+        </button>
+      </div>`;
+  } else {
+    ctrlHtml = `<p class="app-no-link">No application link for this job.</p>`;
+  }
 
   el.innerHTML = `
     <div class="app-layout">
@@ -1305,30 +1358,7 @@ function renderApplicationTab(job) {
       </div>
 
       <div class="app-ctrl-rail">
-        <div class="app-ctrl-top">
-          ${isOpen ? `
-            <div class="app-url-strip">
-              <sl-icon library="lucide" name="globe" class="app-url-icon"></sl-icon>
-              <span id="app-current-url" class="app-url-val">—</span>
-            </div>
-            <button class="app-ctrl-btn app-ctrl-primary" id="btn-focus-browser">
-              <sl-icon library="lucide" name="focus"></sl-icon> Focus
-            </button>
-            <button class="app-ctrl-btn app-ctrl-ghost" id="btn-navigate-browser">
-              <sl-icon library="lucide" name="rotate-ccw"></sl-icon> Reset URL
-            </button>
-            <button class="app-ctrl-btn app-ctrl-danger" id="btn-close-app-browser">
-              <sl-icon library="lucide" name="x"></sl-icon> Close
-            </button>
-          ` : url ? `
-            <button class="app-ctrl-btn app-ctrl-primary" id="btn-open-app-browser">
-              <sl-icon library="lucide" name="external-link"></sl-icon> Open Application
-            </button>
-          ` : `
-            <p class="app-no-link">No application link for this job.</p>
-          `}
-        </div>
-
+        <div class="app-ctrl-top">${ctrlHtml}</div>
         ${hasDraft ? `
           <div class="app-ctrl-foot">
             <button class="app-ctrl-btn app-ctrl-ghost" id="btn-export-pdf-app">
@@ -1390,14 +1420,20 @@ function _stopBrowserPoll() {
 function _handleBrowserDied() {
   _stopBrowserPoll();
   if (!state.browser.port) return; // already cleaned up
+  const wasSetup = state.browser.jobId === '__setup__';
   state.browser.port  = null;
   state.browser.jobId = null;
   // Clean up Python-side subprocess refs and trigger _restore_window_state()
   // (idempotent — safe even if the watcher thread already called it).
   bridge.browserClose().catch(() => {});
-  const job = jobById(state.activeJobId);
-  if (job) renderApplicationTab(job);
-  showToast('Application browser was closed — click "Open Application" to relaunch.');
+  loadBrowserProfileStatus().then(() => {
+    const job = jobById(state.activeJobId);
+    if (job) renderApplicationTab(job);
+    renderBrowserProfileSettings();
+  });
+  showToast(wasSetup
+    ? 'Browser account set up — your logins are saved for next time.'
+    : 'Application browser was closed — click "Open Application" to relaunch.');
 }
 
 // Called by the bridge watcher thread via evaluate_js the instant the
@@ -1448,6 +1484,117 @@ async function closeApplicationBrowser() {
   state.browser.jobId = null;
   const job = jobById(state.activeJobId);
   if (job) renderApplicationTab(job);
+}
+
+// ── Browser profile ───────────────────────────────────────────────────────────
+
+async function loadBrowserProfileStatus() {
+  try {
+    const res = await bridge.browserGetProfileStatus();
+    state.browserProfileExists = res?.exists ?? false;
+    state.browserProfileEmail  = res?.google_email ?? null;
+  } catch (_) {
+    state.browserProfileExists = false;
+    state.browserProfileEmail  = null;
+  }
+}
+
+async function setupBrowserProfile() {
+  try {
+    const result = await bridge.browserSetupProfile();
+    if (!result?.ok) {
+      showToast(`Could not open browser: ${result?.error || 'unknown'}`);
+      return;
+    }
+    state.browser.port  = result.port;
+    state.browser.jobId = '__setup__';
+    state.browserProfileExists = true;
+    const job = jobById(state.activeJobId);
+    if (job) renderApplicationTab(job);
+    renderBrowserProfileSettings();
+    _startBrowserPoll();
+  } catch (e) {
+    showToast(`Browser error: ${e.message}`);
+  }
+}
+
+async function confirmGoogleLogin() {
+  const btn = document.getElementById('btn-confirm-google-login');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<sl-spinner style="font-size:13px"></sl-spinner> Verifying…'; }
+  try {
+    const result = await bridge.browserCheckGoogleLogin();
+    if (!result?.ok) {
+      showToast(`Verification failed: ${result?.error || 'unknown'}`);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<sl-icon library="lucide" name="check-circle"></sl-icon> Confirm Account'; }
+      return;
+    }
+    if (!result.logged_in) {
+      showToast('No Google account detected — please sign in first, then try again.');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<sl-icon library="lucide" name="check-circle"></sl-icon> Confirm Account'; }
+      return;
+    }
+    // Login confirmed and profile-meta.json has been written on the Python side.
+    state.browserProfileExists = true;
+    state.browserProfileEmail  = result.email || null;
+    await closeApplicationBrowser();
+    renderBrowserProfileSettings();
+    showToast(result.email
+      ? `Signed in as ${result.email} — click "Open Application" to apply.`
+      : 'Google account confirmed — click "Open Application" to apply.');
+  } catch (e) {
+    showToast(`Verification error: ${e.message}`);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<sl-icon library="lucide" name="check-circle"></sl-icon> Confirm Account'; }
+  }
+}
+
+let _resetProfileStep = 0;
+
+function openResetProfileDialog() {
+  _resetProfileStep = 1;
+  const body = document.getElementById('reset-browser-dialog-body');
+  const confirmBtn = document.getElementById('btn-reset-profile-confirm');
+  if (body) body.textContent = 'This will delete your saved logins and other information stored in the application window.';
+  if (confirmBtn) confirmBtn.textContent = 'Delete';
+  document.getElementById('reset-browser-dialog').show();
+}
+
+async function doResetBrowserProfile() {
+  try {
+    const res = await bridge.browserResetProfile();
+    if (!res?.ok) { showToast(`Reset failed: ${res?.error || 'unknown'}`); return; }
+    state.browserProfileExists = false;
+    renderBrowserProfileSettings();
+    const job = jobById(state.activeJobId);
+    if (job) renderApplicationTab(job);
+    showToast('Browser account reset — set it up again to reconnect your logins.');
+  } catch (e) {
+    showToast(`Reset error: ${e.message}`);
+  }
+}
+
+function renderBrowserProfileSettings() {
+  const el = document.getElementById('browser-profile-section-content');
+  if (!el) return;
+  if (state.browserProfileExists) {
+    const emailLine = state.browserProfileEmail
+      ? `<span class="settings-hint" style="margin:0;font-size:12px">${escHtml(state.browserProfileEmail)}</span>`
+      : '';
+    el.innerHTML = `
+      <div class="settings-row" style="align-items:center;flex-wrap:wrap;gap:8px">
+        <div class="provider-tag">
+          <span class="provider-dot"></span>
+          <span>Google account connected</span>
+        </div>
+        ${emailLine}
+        <sl-button id="btn-reset-browser-profile" size="small" variant="danger">Reset</sl-button>
+      </div>`;
+  } else {
+    el.innerHTML = `
+      <div class="settings-row" style="align-items:center">
+        <span class="settings-hint" style="margin:0">No account connected.</span>
+        <sl-button id="btn-setup-browser-profile" size="small" variant="primary">Set up</sl-button>
+      </div>`;
+  }
 }
 
 async function resetBrowserUrl() {
@@ -1876,6 +2023,7 @@ function renderMatchInto(idPrefix, m, label) {
 function openSettings() {
   document.getElementById('settings-dialog').show();
   loadProviders();
+  loadBrowserProfileStatus().then(renderBrowserProfileSettings);
 }
 
 async function loadProviders() {
@@ -2214,6 +2362,9 @@ function wire() {
     if (e.target.closest('#btn-focus-browser'))       { focusApplicationBrowser(); return; }
     if (e.target.closest('#btn-close-app-browser'))   { closeApplicationBrowser(); return; }
     if (e.target.closest('#btn-navigate-browser'))    { resetBrowserUrl(); return; }
+    if (e.target.closest('#btn-setup-profile-inline'))  { setupBrowserProfile(); return; }
+    if (e.target.closest('#btn-confirm-google-login'))  { confirmGoogleLogin(); return; }
+    if (e.target.closest('#btn-cancel-setup'))          { closeApplicationBrowser(); return; }
 
     const apBtn = e.target.closest('.rsugg-add-profile');
     if (apBtn?.dataset.skill) { addSkillToProfile(apBtn.dataset.skill); return; }
@@ -2241,6 +2392,34 @@ function wire() {
   document.getElementById('model-select').addEventListener('sl-change', e =>
     document.getElementById('btn-set-model').disabled = !e.target.value);
 
+  // Settings dialog — browser profile section (delegated: content is dynamically rendered)
+  document.getElementById('settings-dialog').addEventListener('click', e => {
+    if (e.target.closest('#btn-setup-browser-profile')) {
+      document.getElementById('settings-dialog').hide();
+      setupBrowserProfile();
+      return;
+    }
+    if (e.target.closest('#btn-reset-browser-profile')) {
+      openResetProfileDialog();
+    }
+  });
+
+  // Reset browser profile confirmation dialog
+  document.getElementById('btn-reset-profile-cancel').addEventListener('click',
+    () => document.getElementById('reset-browser-dialog').hide());
+  document.getElementById('btn-reset-profile-confirm').addEventListener('click', () => {
+    if (_resetProfileStep === 1) {
+      _resetProfileStep = 2;
+      const body = document.getElementById('reset-browser-dialog-body');
+      const confirmBtn = document.getElementById('btn-reset-profile-confirm');
+      if (body) body.textContent = 'This is permanent and cannot be undone.';
+      if (confirmBtn) confirmBtn.textContent = 'I understand, delete everything';
+    } else {
+      document.getElementById('reset-browser-dialog').hide();
+      doResetBrowserProfile();
+    }
+  });
+
   window.addEventListener('resize', () => { scaleResumePage(); updatePaneHeight(); });
 }
 
@@ -2267,7 +2446,7 @@ async function init() {
   }
 
   await refreshDocs();
-  const hasProfile = await loadProfile();
+  const [hasProfile] = await Promise.all([loadProfile(), loadBrowserProfileStatus()]);
   if (hasProfile) renderProfileSections();
   showProfileSubview('main');
 }

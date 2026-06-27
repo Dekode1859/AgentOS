@@ -14,3 +14,5 @@ workspace/documents/*
 !workspace/documents/.gitkeep
 workspace/profile/*
 !workspace/profile/.gitkeep
+workspace/browser-profile/*
+!workspace/browser-profile/.gitkeep

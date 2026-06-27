@@ -271,7 +271,24 @@
     <div id="model-status" class="status-text"></div>
   </div>
 
+  <div class="settings-divider"></div>
+
+  <div class="settings-section">
+    <h3><sl-icon library="lucide" name="monitor"></sl-icon> Browser Account</h3>
+    <p class="settings-hint">Set up a persistent browser session so you stay logged in to job sites between applications.</p>
+    <div id="browser-profile-section-content"></div>
+  </div>
+
   <sl-button slot="footer" id="btn-settings-close">Close</sl-button>
+</sl-dialog>
+
+<!-- ── Reset browser profile confirmation dialog ──────── -->
+<sl-dialog id="reset-browser-dialog" style="--width: 420px">
+  <div id="reset-browser-dialog-body" style="line-height:1.6"></div>
+  <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
+    <sl-button id="btn-reset-profile-cancel">Cancel</sl-button>
+    <sl-button id="btn-reset-profile-confirm" variant="danger">Delete</sl-button>
+  </div>
 </sl-dialog>
 
 <div id="toast" class="hidden"></div>

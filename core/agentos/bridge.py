@@ -83,6 +83,8 @@ class _H(BaseHTTPRequestHandler):
             self._j(self._dispatch({"t": "focus"}, timeout=5))
         elif path == "/detect-fields":
             self._j(self._dispatch({"t": "detect_fields"}, timeout=15))
+        elif path == "/check-google-login":
+            self._j(self._dispatch({"t": "check_google_login"}, timeout=20))
         elif path == "/stop":
             _cmd_q.put({"t": "stop"})
             self._j({"ok": True})
@@ -102,18 +104,44 @@ def _watch_stdin():
 threading.Thread(target=_watch_stdin, daemon=True).start()
 
 _start_url = sys.argv[1] if len(sys.argv) > 1 else "about:blank"
-# Optional tiling bounds: argv[2..5] = left top width height (integers)
+# Args layout: url [left top width height] [user_data_dir]
+# 5 remaining = bounds + user_data_dir; 4 = bounds only (legacy); 1 = user_data_dir only
 _tile_bounds = None
-if len(sys.argv) == 6:
+_user_data_dir = ''
+_remaining = sys.argv[2:]
+if len(_remaining) == 5:
     try:
         _tile_bounds = {
-            "left":        int(sys.argv[2]),
-            "top":         int(sys.argv[3]),
-            "width":       int(sys.argv[4]),
-            "height":      int(sys.argv[5]),
+            "left":        int(_remaining[0]),
+            "top":         int(_remaining[1]),
+            "width":       int(_remaining[2]),
+            "height":      int(_remaining[3]),
             "windowState": "normal",
         }
     except (ValueError, IndexError):
+        pass
+    _user_data_dir = _remaining[4]
+elif len(_remaining) == 4:
+    try:
+        _tile_bounds = {
+            "left":        int(_remaining[0]),
+            "top":         int(_remaining[1]),
+            "width":       int(_remaining[2]),
+            "height":      int(_remaining[3]),
+            "windowState": "normal",
+        }
+    except (ValueError, IndexError):
+        pass
+elif len(_remaining) == 1:
+    _user_data_dir = _remaining[0]
+
+if _user_data_dir:
+    import pathlib as _pl
+    _lock = _pl.Path(_user_data_dir) / 'SingletonLock'
+    try:
+        if _lock.exists() or _lock.is_symlink():
+            _lock.unlink()
+    except Exception:
         pass
 
 def _attach_page_listener(page):
@@ -121,9 +149,27 @@ def _attach_page_listener(page):
     page.on("close", lambda _p: _page_closed.set())
 
 with sync_playwright() as _pw:
-    _browser = _pw.chromium.launch(headless=False)
-    _ctx = _browser.new_context()
-    _page = _ctx.new_page()
+    _browser = None
+    if _user_data_dir:
+        import pathlib as _pl
+        _pl.Path(_user_data_dir).mkdir(parents=True, exist_ok=True)
+        _ctx = _pw.chromium.launch_persistent_context(
+            _user_data_dir,
+            headless=False,
+            channel='chrome',
+            viewport=None,
+            ignore_default_args=['--enable-automation'],
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--no-first-run',
+                '--no-default-browser-check',
+            ],
+        )
+        _page = _ctx.pages[0] if _ctx.pages else _ctx.new_page()
+    else:
+        _browser = _pw.chromium.launch(headless=False)
+        _ctx = _browser.new_context()
+        _page = _ctx.new_page()
     _attach_page_listener(_page)
 
     # Position the Chromium window via CDP when tiling bounds were supplied.
@@ -180,7 +226,8 @@ with sync_playwright() as _pw:
                 _page.bring_to_front()
                 # On macOS, activate by the exact PID Playwright launched —
                 # not by bundle ID, which would match any running Chrome/Chromium.
-                if sys.platform == "darwin":
+                # Only available in non-persistent mode (_browser is not None).
+                if sys.platform == "darwin" and _browser:
                     try:
                         from AppKit import NSRunningApplication, NSApplicationActivateIgnoringOtherApps
                         _chromium_pid = _browser.process.pid
@@ -219,6 +266,34 @@ with sync_playwright() as _pw:
   return forms;
 })()""")
                 _res_q.put({"ok": True, "forms": _forms or []})
+            elif _t == "check_google_login":
+                try:
+                    _cookies = _ctx.cookies(urls=["https://accounts.google.com", "https://google.com"])
+                    _session_names = {"SID", "SAPISID", "__Secure-3PSID", "SSID"}
+                    _has_session = any(c["name"] in _session_names for c in _cookies)
+                    _email = None
+                    if _has_session:
+                        _vp = _ctx.new_page()
+                        try:
+                            _vp.goto("https://accounts.google.com/", wait_until="domcontentloaded", timeout=12000)
+                            _vp.wait_for_timeout(1500)
+                            _email = _vp.evaluate("""() => {
+                                const byData = document.querySelector('[data-email]');
+                                if (byData) return byData.getAttribute('data-email');
+                                const byAria = document.querySelector('[aria-label*="@"]');
+                                if (byAria) return byAria.getAttribute('aria-label');
+                                const chip = document.querySelector('.gb_lb, .gb_kb');
+                                if (chip) return chip.textContent.trim();
+                                return null;
+                            }""")
+                        except Exception:
+                            pass
+                        finally:
+                            try: _vp.close()
+                            except Exception: pass
+                    _res_q.put({"ok": True, "logged_in": _has_session, "email": _email})
+                except Exception as _ce:
+                    _res_q.put({"ok": False, "error": str(_ce)})
             else:
                 _res_q.put({"ok": False, "error": "unknown command"})
         except Exception as _e:
@@ -389,8 +464,9 @@ class Bridge:
 
         # ── Launch subprocess ─────────────────────────────────────────────────
         try:
+            profile_dir = str(self._workspace / "browser-profile")
             proc = subprocess.Popen(
-                [sys.executable, "-c", _BROWSER_AGENT, url, *bounds_args],
+                [sys.executable, "-c", _BROWSER_AGENT, url, *bounds_args, profile_dir],
                 stdin=subprocess.PIPE,   # agent watches stdin; EOF → agent exits
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -442,6 +518,69 @@ class Bridge:
                 return _json.loads(resp.read().decode())
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    def browser_get_profile_status(self) -> dict:
+        """Return whether a validated browser profile exists, plus account metadata."""
+        meta_path = self._workspace / "browser-profile" / "profile-meta.json"
+        if meta_path.exists():
+            try:
+                import json as _json
+                meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+                return {
+                    "exists": True,
+                    "google_email": meta.get("google_email"),
+                    "setup_date": meta.get("setup_date"),
+                }
+            except Exception:
+                pass
+        return {"exists": False}
+
+    def browser_setup_profile(self) -> dict:
+        """Open a headed Chromium with persistent context at Google sign-in."""
+        (self._workspace / "browser-profile").mkdir(parents=True, exist_ok=True)
+        return self.browser_open("https://accounts.google.com")
+
+    def browser_check_google_login(self) -> dict:
+        """Verify Google session cookies exist and extract the account email.
+        On success, writes profile-meta.json so the profile is marked as set up."""
+        import json as _json, urllib.request
+        port = getattr(self, "_browser_port", None)
+        if not port:
+            return {"ok": False, "error": "Browser not open"}
+        try:
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/check-google-login",
+                method="POST",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                result = _json.loads(resp.read().decode())
+            if result.get("ok") and result.get("logged_in"):
+                import datetime
+                meta = {
+                    "google_email": result.get("email"),
+                    "setup_date": datetime.date.today().isoformat(),
+                }
+                meta_path = self._workspace / "browser-profile" / "profile-meta.json"
+                meta_path.write_text(_json.dumps(meta, indent=2), encoding="utf-8")
+            return result
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def browser_reset_profile(self) -> dict:
+        """Delete all browser profile data (saved sessions, cookies, logins)."""
+        import shutil
+        self._browser_close_internal()
+        profile_dir = self._workspace / "browser-profile"
+        if profile_dir.exists():
+            try:
+                shutil.rmtree(profile_dir)
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        (profile_dir / ".gitkeep").touch()
+        return {"ok": True}
 
     def _browser_close_internal(self) -> dict:
         proc = getattr(self, "_browser_proc", None)
