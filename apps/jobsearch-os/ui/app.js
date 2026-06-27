@@ -198,8 +198,10 @@ function mergeProfile(existing, extracted) {
   return merged;
 }
 
-// ── Profile: ingest (extract + merge) ────────────────────────────────────────
-function parseProfileJson(text) {
+// ── Agent reply parsing ───────────────────────────────────────────────────────
+// Agents return JSON, sometimes wrapped in a markdown fence or surrounded by
+// prose. Strip the fence and slice to the outermost braces, then parse.
+function parseAgentJson(text) {
   let t = (text || '').trim();
   t = t.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   const s = t.indexOf('{'), e = t.lastIndexOf('}');
@@ -219,7 +221,7 @@ async function extractAndMerge() {
     });
     const reply = (msg?.parts || []).filter(p => p.type === 'text' && p.text).map(p => p.text).join('');
     let extracted;
-    try { extracted = parseProfileJson(reply); }
+    try { extracted = parseAgentJson(reply); }
     catch (_) { showToast('Could not parse extraction — try again.'); return; }
 
     state.profile = mergeProfile(state.profile || emptyProfile(), extracted);
@@ -300,43 +302,41 @@ function replaceSectionInDOM(name) {
   old.replaceWith(tmp.firstElementChild);
 }
 
-// ── Profile: view renderers ───────────────────────────────────────────────────
-function renderSectionView(name) {
-  const p = state.profile;
-  switch (name) {
-    case 'identity': {
-      const id = p.identity || {};
-      if (!id.name && !id.headline && !id.summary)
-        return psEmpty('No identity info — click Edit to add.');
-      return `
+// ── Profile: view renderers (one entry per section; see SECTION_EDITS below) ───
+const SECTION_VIEWS = {
+  identity: (p) => {
+    const id = p.identity || {};
+    if (!id.name && !id.headline && !id.summary)
+      return psEmpty('No identity info — click Edit to add.');
+    return `
         ${id.name     ? `<div class="ps-name">${escHtml(id.name)}</div>` : ''}
         ${id.headline ? `<div class="ps-headline">${escHtml(id.headline)}</div>` : ''}
         ${id.location ? `<div class="ps-meta-row"><sl-icon library="lucide" name="map-pin"></sl-icon>${escHtml(id.location)}</div>` : ''}
         ${id.summary  ? `<p class="ps-summary">${escHtml(id.summary)}</p>` : ''}`;
-    }
-    case 'contact': {
-      const c = p.contact || {};
-      if (!c.email && !c.phone && !(c.links||[]).length)
-        return psEmpty('No contact info — click Edit to add.');
-      return `
+  },
+  contact: (p) => {
+    const c = p.contact || {};
+    if (!c.email && !c.phone && !(c.links||[]).length)
+      return psEmpty('No contact info — click Edit to add.');
+    return `
         ${c.email ? `<div class="ps-meta-row"><sl-icon library="lucide" name="mail"></sl-icon>${escHtml(c.email)}</div>` : ''}
         ${c.phone ? `<div class="ps-meta-row"><sl-icon library="lucide" name="phone"></sl-icon>${escHtml(c.phone)}</div>` : ''}
         ${(c.links||[]).map(l => `<div class="ps-meta-row"><sl-icon library="lucide" name="link"></sl-icon>
           <a class="p-link" href="${escAttr(l.url)}" target="_blank">${escHtml(l.label || l.url)}</a></div>`).join('')}`;
-    }
-    case 'skills': {
-      const bs = p.skill_buckets || [];
-      if (!bs.length) return psEmpty('No skills — click Edit to add buckets.');
-      return bs.map(b => `
+  },
+  skills: (p) => {
+    const bs = p.skill_buckets || [];
+    if (!bs.length) return psEmpty('No skills — click Edit to add buckets.');
+    return bs.map(b => `
         <div class="skill-bucket-view">
           <div class="skill-bucket-label">${escHtml(b.category)}</div>
           <div class="chips">${(b.skills||[]).map(s=>`<span class="chip">${escHtml(s)}</span>`).join('')}</div>
         </div>`).join('');
-    }
-    case 'experience': {
-      const exps = p.experience || [];
-      if (!exps.length) return psEmpty('No experience — click Edit to add.');
-      return exps.map(e => `
+  },
+  experience: (p) => {
+    const exps = p.experience || [];
+    if (!exps.length) return psEmpty('No experience — click Edit to add.');
+    return exps.map(e => `
         <div class="ps-list-item">
           <div class="entry-head">
             <span class="entry-title">${escHtml(e.title||'')}</span>
@@ -347,11 +347,11 @@ function renderSectionView(name) {
           ${(e.highlights||[]).length ? `<ul class="ps-bullets">${e.highlights.map(h=>`<li>${escHtml(h)}</li>`).join('')}</ul>` : ''}
           ${(e.tags||[]).length ? `<div class="chips" style="margin-top:7px">${e.tags.map(t=>`<span class="chip chip-tag">${escHtml(t)}</span>`).join('')}</div>` : ''}
         </div>`).join('');
-    }
-    case 'projects': {
-      const projs = p.projects || [];
-      if (!projs.length) return psEmpty('No projects — click Edit to add.');
-      return projs.map(pr => `
+  },
+  projects: (p) => {
+    const projs = p.projects || [];
+    if (!projs.length) return psEmpty('No projects — click Edit to add.');
+    return projs.map(pr => `
         <div class="ps-list-item">
           <div class="ps-proj-head">
             <span class="entry-title">${escHtml(pr.name||'')}</span>
@@ -364,51 +364,52 @@ function renderSectionView(name) {
           ${(pr.highlights||[]).length ? `<ul class="ps-bullets">${pr.highlights.map(h=>`<li>${escHtml(h)}</li>`).join('')}</ul>` : ''}
           ${(pr.tags||[]).length ? `<div class="chips" style="margin-top:7px">${pr.tags.map(t=>`<span class="chip chip-tag">${escHtml(t)}</span>`).join('')}</div>` : ''}
         </div>`).join('');
-    }
-    case 'education': {
-      const eds = p.education || [];
-      if (!eds.length) return psEmpty('No education — click Edit to add.');
-      return eds.map(ed => `
+  },
+  education: (p) => {
+    const eds = p.education || [];
+    if (!eds.length) return psEmpty('No education — click Edit to add.');
+    return eds.map(ed => `
         <div class="ps-list-item">
           <div class="entry-title">${escHtml(ed.degree||'')}</div>
           <div class="entry-sub">${escHtml([ed.institution,ed.year].filter(Boolean).join(' · '))}</div>
         </div>`).join('');
-    }
-    case 'certifications': {
-      const certs = p.certifications || [];
-      if (!certs.length) return psEmpty('No certifications — click Edit to add.');
-      return certs.map(c => {
-        const obj = typeof c === 'string' ? { name: c, issuer: '', year: '' } : c;
-        return `<div class="ps-list-item">
+  },
+  certifications: (p) => {
+    const certs = p.certifications || [];
+    if (!certs.length) return psEmpty('No certifications — click Edit to add.');
+    return certs.map(c => {
+      const obj = typeof c === 'string' ? { name: c, issuer: '', year: '' } : c;
+      return `<div class="ps-list-item">
           <div class="entry-title">${escHtml(obj.name||'')}</div>
           ${(obj.issuer||obj.year) ? `<div class="entry-sub">${escHtml([obj.issuer,obj.year].filter(Boolean).join(' · '))}</div>` : ''}
         </div>`;}).join('');
-    }
-    case 'publications': {
-      const pubs = p.publications || [];
-      if (!pubs.length) return psEmpty('No publications — click Edit to add.');
-      return pubs.map(pub => `
+  },
+  publications: (p) => {
+    const pubs = p.publications || [];
+    if (!pubs.length) return psEmpty('No publications — click Edit to add.');
+    return pubs.map(pub => `
         <div class="ps-list-item">
           <div class="entry-title">${escHtml(pub.title||'')}</div>
           <div class="entry-sub">${escHtml([pub.venue,pub.year].filter(Boolean).join(' · '))}</div>
           ${pub.url ? `<a class="p-link" href="${escAttr(pub.url)}" target="_blank" style="font-size:12.5px">${escHtml(pub.url)}</a>` : ''}
         </div>`).join('');
-    }
-    default: return '';
-  }
+  },
+};
+
+function renderSectionView(name) {
+  const fn = SECTION_VIEWS[name];
+  return fn ? fn(state.profile) : '';
 }
 
 function psEmpty(msg) {
   return `<div class="ps-empty-msg">${escHtml(msg)}</div>`;
 }
 
-// ── Profile: edit renderers ───────────────────────────────────────────────────
-function renderSectionEdit(name) {
-  const p = state.profile;
-  switch (name) {
-    case 'identity': {
-      const id = p.identity || {};
-      return `
+// ── Profile: edit renderers (one entry per section; mirrors SECTION_VIEWS) ─────
+const SECTION_EDITS = {
+  identity: (p) => {
+    const id = p.identity || {};
+    return `
         <div class="form-field"><label class="field-label">Name</label>
           <input class="field-input" data-field="name" value="${escAttr(id.name||'')}"/></div>
         <div class="form-field"><label class="field-label">Headline</label>
@@ -417,16 +418,16 @@ function renderSectionEdit(name) {
           <input class="field-input" data-field="location" value="${escAttr(id.location||'')}"/></div>
         <div class="form-field"><label class="field-label">Summary</label>
           <textarea class="field-input field-textarea" data-field="summary">${escHtml(id.summary||'')}</textarea></div>`;
-    }
-    case 'contact': {
-      const c = p.contact || {};
-      const linksHtml = (c.links||[]).map(l => `
+  },
+  contact: (p) => {
+    const c = p.contact || {};
+    const linksHtml = (c.links||[]).map(l => `
         <div class="link-entry ps-list-row">
           <input class="field-input" data-subfield="label" placeholder="Label (LinkedIn, GitHub…)" value="${escAttr(l.label||'')}"/>
           <input class="field-input" data-subfield="url" placeholder="URL" value="${escAttr(l.url||'')}"/>
           <button class="ps-remove-link ps-btn-icon" title="Remove">×</button>
         </div>`).join('');
-      return `
+    return `
         <div class="form-field"><label class="field-label">Email</label>
           <input class="field-input" data-field="email" value="${escAttr(c.email||'')}"/></div>
         <div class="form-field"><label class="field-label">Phone</label>
@@ -435,24 +436,24 @@ function renderSectionEdit(name) {
           <div id="links-editor">${linksHtml}</div>
           <button class="ps-add-link ps-btn-ghost" style="margin-top:8px">+ Add Link</button>
         </div>`;
-    }
-    case 'skills':
-      return `<div id="buckets-editor">
+  },
+  skills: (p) =>
+    `<div id="buckets-editor">
           ${(p.skill_buckets||[]).map(renderBucketEdit).join('')}
         </div>
-        <button class="ps-add-bucket ps-btn-ghost" style="margin-top:10px">+ Add Bucket</button>`;
-    case 'experience':
-      return `<div id="exp-editor">
+        <button class="ps-add-bucket ps-btn-ghost" style="margin-top:10px">+ Add Bucket</button>`,
+  experience: (p) =>
+    `<div id="exp-editor">
           ${(p.experience||[]).map(renderExpItemEdit).join('')}
         </div>
-        <button class="ps-add-exp ps-btn-ghost" style="margin-top:10px">+ Add Role</button>`;
-    case 'projects':
-      return `<div id="proj-editor">
+        <button class="ps-add-exp ps-btn-ghost" style="margin-top:10px">+ Add Role</button>`,
+  projects: (p) =>
+    `<div id="proj-editor">
           ${(p.projects||[]).map(renderProjItemEdit).join('')}
         </div>
-        <button class="ps-add-proj ps-btn-ghost" style="margin-top:10px">+ Add Project</button>`;
-    case 'education':
-      return `<div id="edu-editor">
+        <button class="ps-add-proj ps-btn-ghost" style="margin-top:10px">+ Add Project</button>`,
+  education: (p) =>
+    `<div id="edu-editor">
           ${(p.education||[]).map((ed,i) => `
             <div class="ps-list-edit-row" data-idx="${i}">
               <div class="ps-list-edit-fields">
@@ -463,10 +464,10 @@ function renderSectionEdit(name) {
               <button class="ps-remove-edu ps-btn-icon">×</button>
             </div>`).join('')}
         </div>
-        <button class="ps-add-edu ps-btn-ghost" style="margin-top:10px">+ Add Education</button>`;
-    case 'certifications': {
-      const certs = (p.certifications||[]).map(c => typeof c === 'string' ? {name:c,issuer:'',year:''} : c);
-      return `<div id="cert-editor">
+        <button class="ps-add-edu ps-btn-ghost" style="margin-top:10px">+ Add Education</button>`,
+  certifications: (p) => {
+    const certs = (p.certifications||[]).map(c => typeof c === 'string' ? {name:c,issuer:'',year:''} : c);
+    return `<div id="cert-editor">
           ${certs.map((c,i) => `
             <div class="ps-list-edit-row" data-idx="${i}">
               <div class="ps-list-edit-fields">
@@ -478,9 +479,9 @@ function renderSectionEdit(name) {
             </div>`).join('')}
         </div>
         <button class="ps-add-cert ps-btn-ghost" style="margin-top:10px">+ Add Certification</button>`;
-    }
-    case 'publications':
-      return `<div id="pub-editor">
+  },
+  publications: (p) =>
+    `<div id="pub-editor">
           ${(p.publications||[]).map((pub,i) => `
             <div class="ps-list-edit-row" data-idx="${i}">
               <div class="ps-list-edit-fields">
@@ -492,9 +493,12 @@ function renderSectionEdit(name) {
               <button class="ps-remove-pub ps-btn-icon">×</button>
             </div>`).join('')}
         </div>
-        <button class="ps-add-pub ps-btn-ghost" style="margin-top:10px">+ Add Publication</button>`;
-    default: return '';
-  }
+        <button class="ps-add-pub ps-btn-ghost" style="margin-top:10px">+ Add Publication</button>`,
+};
+
+function renderSectionEdit(name) {
+  const fn = SECTION_EDITS[name];
+  return fn ? fn(state.profile) : '';
 }
 
 function renderBucketEdit(bucket, idx) {
@@ -1073,14 +1077,6 @@ function renderJobDetailCards(job) {
 }
 
 // ── Match analysis: shared runner + renderer ──────────────────────────────────
-function parseMatchJson(text) {
-  let t = (text || '').trim();
-  t = t.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  const s = t.indexOf('{'), e = t.lastIndexOf('}');
-  if (s >= 0 && e > s) t = t.slice(s, e + 1);
-  return JSON.parse(t);
-}
-
 async function runMatchAnalysis(title, company, description) {
   const p = state.profile || {};
   const bucketSummary = (p.skill_buckets || [])
@@ -1098,7 +1094,7 @@ async function runMatchAnalysis(title, company, description) {
     body: JSON.stringify({ agent: 'jd-match', parts: [{ type: 'text', text: prompt }] }),
   });
   const reply = (msg?.parts || []).filter(p => p.type === 'text' && p.text).map(p => p.text).join('');
-  return parseMatchJson(reply);
+  return parseAgentJson(reply);
 }
 
 // ── Resume tab: left actions pane ─────────────────────────────────────────────
@@ -1165,11 +1161,7 @@ async function runResumeComposition(job, extraSkills) {
     body: JSON.stringify({ agent: 'resume-composer', parts: [{ type: 'text', text: prompt }] }),
   });
   const reply = (msg?.parts || []).filter(p => p.type === 'text' && p.text).map(p => p.text).join('');
-  let t = reply.trim();
-  t = t.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  const s = t.indexOf('{'), e = t.lastIndexOf('}');
-  if (s >= 0 && e > s) t = t.slice(s, e + 1);
-  return JSON.parse(t);
+  return parseAgentJson(reply);
 }
 
 async function composeResume() {
@@ -2152,16 +2144,13 @@ async function setModel() {
   }
 }
 
-function setAuthStatus(type, msg) {
-  const el = document.getElementById('auth-status');
+function setStatusText(id, type, msg) {
+  const el = document.getElementById(id);
   el.className = `status-text${type ? ` status-${type}` : ''}`;
   el.textContent = msg;
 }
-function setModelStatus(type, msg) {
-  const el = document.getElementById('model-status');
-  el.className = `status-text${type ? ` status-${type}` : ''}`;
-  el.textContent = msg;
-}
+const setAuthStatus  = (type, msg) => setStatusText('auth-status', type, msg);
+const setModelStatus = (type, msg) => setStatusText('model-status', type, msg);
 
 function updateModelBadge() {
   const el = document.getElementById('model-badge-text');
