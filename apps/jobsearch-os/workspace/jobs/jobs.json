@@ -1,0 +1,413 @@
+[
+  {
+    "id": "1782331113043",
+    "title": "Untitled Role",
+    "company": "",
+    "link": "",
+    "description": "About the job\nAbout The Company\n\nKantiv (Joist AI) is a technology company revolutionizing the way professionals in the architecture, engineering, and construction (AEC) industry manage marketing and revenue operations. Our AI-powered software streamlines workflows, making it easier for teams to collaborate, innovate, and succeed.\n\nAbout The Role\n\nKantiv is looking for an engineer with 2–4 years of experience to help build the next generation of agentic applications that streamline proposal writing for the AEC industry. These are systems that reason, use tools, remember, and collaborate with users. The stack spans multi-agent orchestration, MCP servers, skills, long-term memory, evals, retrieval, and the plumbing that makes all of it hold up in production. We're looking for someone to help us build it.\n\nWhat You'll Do\n\nBuild agents as modular, plug-and-play components that slot cleanly into the wider stack. \nAdd memory layers (short-term, long-term, summarization, retrieval-backed) into running systems. \nWire up tool integrations, MCP servers, and skills. \nOwn quality of the features you put out: tests, evals, observability, the works. \nDig into production traces to understand what the system is actually doing, and close the loop with fixes. \n\nBackground we're looking for\n\n2–4 years of writing production software. \nStrong Python skills. You write good Python and can tell good Python from bad, especially now that a lot of code comes out of an LLM. Separation of concerns, clean OOP, idiomatic syntax, well-structured modules, tests that actually test something. \nSolid grounding in core agentic and LLM concepts: RAG, prompting patterns, tool use, structured outputs, streaming, context management, basic generative AI fundamentals. \nYou've built something non-trivial with the modern agent toolkit, whether that's a side project, a prototype at work, or a hackathon thing that got out of hand. \nAble to drop into an unfamiliar codebase and find your way around fast. \nA keen eye for detail. You sit with a problem before reaching for a solution. No jumping to the shiny fix because it sounds clever. You understand what's actually broken before you touch anything. \nData-driven by default. Decisions come from production traces, eval numbers, and logs, not vibes. Comfortable slicing through trace data to find the real signal. \nHands-on experience with Langfuse or LangSmith (or equivalent tracing/observability for LLM systems). \nGenuine curiosity about the frontier. You read the blog posts, try the frameworks, and have opinions about where agent design is headed. \n\nExperience We'd Be Particularly Excited About\n\nSearch and retrieval: embeddings, vector databases, hybrid retrieval, rerankers, and the gap between a retrieval system that demos well and one that survives real data. \nLLM evaluations end-to-end: designing evals, choosing what to measure, building the harness, keeping scores honest as models and prompts shift. \nLangGraph depth: building custom graphs, understanding checkpointers, working with context-management nodes (summarizers, windowing, state pruning) inside larger agent graphs. \n\nWhat To Expect\n\nWe conduct a rigorous interview process based on integrity, talent, and drive. We trust our teammates from day one and move quickly to evaluate your fit for the role. The entire interview process typically takes two weeks. Here's what to expect:\n\nA 30 minute Zoom meeting to talk about Kantiv, your background, and answer any questions about the role. (Getting to know each other)\n45-minute Python proficiency / agentic coding proficiency test. 2 problems. 1 to be coded by hand. Other using Gen AI. \n60 min project, deep dive into the work they have done. A short presentation followed by a Q&A. Presentation should conclude between 20-25 min. \n45 min interview on Gen AI / LLM fundamentals. \n30 min culture fit.",
+    "status": "saved",
+    "match_score": 75,
+    "match_result": {
+      "match_score": 75,
+      "summary": "Strong candidate for an agentic AI engineer role. You have direct production experience building multi-agent systems with Agno, LlamaIndex, and LangChain — exactly the toolkit this role demands. Your strongest asset is hands-on multi-agent orchestration and RAG pipeline experience in production. The main gaps are explicit experience with Langfuse/LangSmith observability and MCP server integration, both of which are explicitly requested.",
+      "application_strategy": "Lead with your multi-agent document intelligence system at Fincepta and your self-hosted workflow infrastructure project — they demonstrate exactly the kind of production agentic systems Kantiv is building. Frame your LangChain and LlamaIndex experience as transferable to their MCP and memory-layer architecture, and address the Langfuse/LangSmith gap head-on by mentioning your CloudWatch observability work and willingness to pick up their tracing stack quickly.",
+      "skills_matched": [
+        "Python",
+        "LangChain",
+        "LlamaIndex",
+        "Agno",
+        "PostgreSQL",
+        "PGVector",
+        "Docker",
+        "Temporal",
+        "FastAPI",
+        "AWS",
+        "Hugging Face"
+      ],
+      "partial_matches": [
+        {
+          "skill": "LangGraph",
+          "bucket": "AI / ML",
+          "reason": "Has LangChain and LlamaIndex; same LLM orchestration paradigm, direct transferable knowledge of agent graph patterns"
+        },
+        {
+          "skill": "Langfuse / LangSmith",
+          "bucket": "Tools & DevOps",
+          "reason": "Has CloudWatch for observability and production tracing experience; LLM-specific tracing tools are learnable extensions of existing monitoring skills"
+        },
+        {
+          "skill": "MCP Servers",
+          "bucket": "Agentic Frameworks",
+          "reason": "Has Agno agent framework and Temporal workflow orchestration; MCP is a tool integration pattern that builds on existing agent architecture experience"
+        }
+      ],
+      "required_gaps": [
+        "Langfuse or LangSmith (LLM observability/tracing)",
+        "MCP server integration"
+      ],
+      "nice_to_have_gaps": [
+        "LangGraph",
+        "Hybrid retrieval and rerankers",
+        "LLM evaluation harness design"
+      ],
+      "apply_readiness": {
+        "verdict": "stretch",
+        "reason": "You meet most core requirements — strong Python, production agentic experience, RAG, tool use — but lack explicit Langfuse/LangSmith and MCP server experience, both of which are explicitly called out in the job description."
+      },
+      "profile_gaps": [
+        "RAG system design and retrieval optimization",
+        "LLM evaluation and benchmarking",
+        "Production LLM observability and tracing",
+        "Structured output parsing and streaming"
+      ],
+      "relevant_projects": [
+        {
+          "name": "Multi-Agent Document Intelligence System (Fincepta)",
+          "reason": "Directly demonstrates multi-agent orchestration, tool integration, and production deployment — the core of what Kantiv is building for proposal writing.",
+          "talking_points": [
+            "Built a multi-agent document intelligence system using Agno and LlamaIndex that automated analyst workflows, reducing turnaround from 7 days to 24 hours — directly analogous to the proposal-writing agents Kantiv needs.",
+            "Designed custom table extraction and calculation engines as agent tools, showing exactly the kind of modular tool integration this role requires."
+          ]
+        },
+        {
+          "name": "Local AI Workflow Infrastructure Platform",
+          "reason": "Demonstrates production-grade infrastructure for stateful AI workloads with workflow orchestration, API routing, and service-to-service communication — directly relevant to building agent systems that 'hold up in production.'",
+          "talking_points": [
+            "Designed isolated service environments for orchestration, data persistence, and workflow execution using Temporal and Docker — the same production-grade patterns Kantiv needs for their agent stack.",
+            "Implemented secure API gateways and service-to-service communication patterns, which maps directly to building MCP server integrations and tool routing."
+          ]
+        },
+        {
+          "name": "Mantis — AI Product Intelligence Platform",
+          "reason": "Shows asynchronous workflow pipelines, fault-tolerant extraction systems, and LangChain integration — relevant to building agents that reason, use tools, and collaborate with users.",
+          "talking_points": [
+            "Built asynchronous workflow pipelines using Temporal for monitoring, scheduling, and alerting — the same production workflow patterns needed for agent orchestration with long-term memory and retrieval.",
+            "Integrated LangChain and Ollama for AI-powered extraction, demonstrating hands-on LLM tool use and prompting in production."
+          ]
+        },
+        {
+          "name": "Production Credit Underwriting Platform (Fincepta)",
+          "reason": "Demonstrates building production ML systems at scale with feature engineering, model deployment, and real-time inference — relevant to the data-driven, eval-heavy culture Kantiv describes.",
+          "talking_points": [
+            "Engineered a feature generation pipeline producing 10,000+ derived financial indicators, showing the data-driven rigor and trace analysis Kantiv values.",
+            "Built scenario-specific XGBoost models for automated real-time inference, demonstrating production ML deployment skills that transfer to LLM-based agent systems."
+          ]
+        }
+      ],
+      "relevant_experience": "Your current role as AI Engineer at Fincepta involves building production agentic systems with multi-agent orchestration, RAG pipelines, and workflow automation — exactly the domain Kantiv is hiring for. The level matches their 2-4 year experience requirement, and your work spans architecture through deployment, which aligns with their expectation of owning quality end-to-end.",
+      "focus_areas": [
+        "Learn Langfuse or LangSmith for LLM-specific tracing and observability",
+        "Build a side project or prototype using MCP server integration patterns",
+        "Study LangGraph for custom agent graph construction and state management",
+        "Practice designing LLM evaluation harnesses — evals, metrics, harnesses"
+      ],
+      "green_flags": [
+        "Direct production experience with multi-agent systems using Agno and LlamaIndex",
+        "Strong RAG and vector database experience with PGVector and LlamaIndex",
+        "Workflow orchestration expertise with Temporal — directly relevant to agent state management",
+        "Self-hosted AI infrastructure project demonstrates genuine curiosity and hands-on depth beyond work requirements"
+      ]
+    },
+    "score_history": [],
+    "created_at": "2026-06-24T19:58:33.043Z",
+    "resume_extra_skills": [],
+    "resume_draft": {
+      "summary": "Applied AI Engineer with production experience building multi-agent document intelligence systems and workflow automation platforms using Agno, LlamaIndex, and Temporal. Strong Python foundation with hands-on RAG pipeline development, tool integration, and cloud-native deployment on AWS. Experienced in taking agentic systems from architecture through production monitoring, with a focus on modular, plug-and-play agent components and observability.",
+      "skills": [
+        "Python",
+        "LangChain",
+        "LlamaIndex",
+        "Agno",
+        "Temporal",
+        "Docker",
+        "FastAPI",
+        "PostgreSQL",
+        "PGVector",
+        "AWS",
+        "Hugging Face",
+        "Ollama"
+      ],
+      "experience": [
+        {
+          "id": "1782322976136e0",
+          "bullets": [
+            "Reduced analyst turnaround time from 7 days to 24 hours by designing multi-agent document intelligence system using Agno, LlamaIndex, and Gemini, with custom table extraction and calculation engines as modular agent tools.",
+            "Designed serverless ETL architecture using AWS CDK, Glue, PySpark, and Redshift for near real-time monitoring of platform health, demonstrating production observability and trace analysis capabilities."
+          ]
+        }
+      ],
+      "projects": [
+        {
+          "id": "1782322976136p0",
+          "bullets": [
+            "Designed isolated service environments for orchestration, API routing, data persistence, and workflow execution using Temporal, Docker, and FastAPI, enabling stateful AI workloads with production-grade reliability.",
+            "Implemented secure API gateways and service-to-service communication patterns, creating a self-hosted infrastructure platform for distributed AI systems experimentation and workflow orchestration."
+          ]
+        },
+        {
+          "id": "1782322976136p1",
+          "bullets": [
+            "Built asynchronous workflow pipelines using Temporal for monitoring, scheduling, and alerting in an AI-powered product tracking platform, demonstrating fault-tolerant extraction and notification systems.",
+            "Integrated LangChain and Ollama for AI-powered extraction from e-commerce storefronts, showcasing hands-on LLM tool use and prompting patterns in production."
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "1782331080186",
+    "title": "Untitled Role",
+    "company": "",
+    "link": "",
+    "description": "About the job\nAbout The Company\n\nKantiv (Joist AI) is a technology company revolutionizing the way professionals in the architecture, engineering, and construction (AEC) industry manage marketing and revenue operations. Our AI-powered software streamlines workflows, making it easier for teams to collaborate, innovate, and succeed.\n\nAbout The Role\n\nKantiv is looking for an engineer with 2–4 years of experience to help build the next generation of agentic applications that streamline proposal writing for the AEC industry. These are systems that reason, use tools, remember, and collaborate with users. The stack spans multi-agent orchestration, MCP servers, skills, long-term memory, evals, retrieval, and the plumbing that makes all of it hold up in production. We're looking for someone to help us build it.\n\nWhat You'll Do\n\nBuild agents as modular, plug-and-play components that slot cleanly into the wider stack. \nAdd memory layers (short-term, long-term, summarization, retrieval-backed) into running systems. \nWire up tool integrations, MCP servers, and skills. \nOwn quality of the features you put out: tests, evals, observability, the works. \nDig into production traces to understand what the system is actually doing, and close the loop with fixes. \n\nBackground we're looking for\n\n2–4 years of writing production software. \nStrong Python skills. You write good Python and can tell good Python from bad, especially now that a lot of code comes out of an LLM. Separation of concerns, clean OOP, idiomatic syntax, well-structured modules, tests that actually test something. \nSolid grounding in core agentic and LLM concepts: RAG, prompting patterns, tool use, structured outputs, streaming, context management, basic generative AI fundamentals. \nYou've built something non-trivial with the modern agent toolkit, whether that's a side project, a prototype at work, or a hackathon thing that got out of hand. \nAble to drop into an unfamiliar codebase and find your way around fast. \nA keen eye for detail. You sit with a problem before reaching for a solution. No jumping to the shiny fix because it sounds clever. You understand what's actually broken before you touch anything. \nData-driven by default. Decisions come from production traces, eval numbers, and logs, not vibes. Comfortable slicing through trace data to find the real signal. \nHands-on experience with Langfuse or LangSmith (or equivalent tracing/observability for LLM systems). \nGenuine curiosity about the frontier. You read the blog posts, try the frameworks, and have opinions about where agent design is headed. \n\nExperience We'd Be Particularly Excited About\n\nSearch and retrieval: embeddings, vector databases, hybrid retrieval, rerankers, and the gap between a retrieval system that demos well and one that survives real data. \nLLM evaluations end-to-end: designing evals, choosing what to measure, building the harness, keeping scores honest as models and prompts shift. \nLangGraph depth: building custom graphs, understanding checkpointers, working with context-management nodes (summarizers, windowing, state pruning) inside larger agent graphs. \n\nWhat To Expect\n\nWe conduct a rigorous interview process based on integrity, talent, and drive. We trust our teammates from day one and move quickly to evaluate your fit for the role. The entire interview process typically takes two weeks. Here's what to expect:\n\nA 30 minute Zoom meeting to talk about Kantiv, your background, and answer any questions about the role. (Getting to know each other)\n45-minute Python proficiency / agentic coding proficiency test. 2 problems. 1 to be coded by hand. Other using Gen AI. \n60 min project, deep dive into the work they have done. A short presentation followed by a Q&A. Presentation should conclude between 20-25 min. \n45 min interview on Gen AI / LLM fundamentals. \n30 min culture fit.",
+    "status": "saved",
+    "match_score": null,
+    "match_result": null,
+    "score_history": [],
+    "created_at": "2026-06-24T19:58:00.186Z"
+  },
+  {
+    "id": "1782330898997",
+    "title": "Generative AI Engineer",
+    "company": "Coforge",
+    "link": "https://www.linkedin.com/jobs/view/4423818994/",
+    "description": "Job Title: Generative AI Engineer\nSkills: Generative AI, RAG, Python & Prompt Engineering\nExperience: 6 - 10 years\nLocation: Greater Noida, Pune & Hyderabad\n\nWe at Coforge are hiring a Generative AI Engineer with the following skillset:\n\nProven ability to design and implement AI/ML and Generative AI solutions, including chatbots, intelligent search, automation, and recommendation systems\nHands-on experience in developing and optimizing LLM-based applications, including prompt engineering, embeddings, and fine-tuning techniques\nStrong expertise in building and managing Retrieval-Augmented Generation (RAG) systems using vector databases such as FAISS, Pinecone, and PGVector\nExperience integrating large language models (LLMs) such as GPT, Claude, LLaMA, and Mistral into enterprise-grade applications\nProficiency in working with orchestration frameworks such as LangChain, LlamaIndex, and Haystack to design scalable AI workflows\nStrong collaboration experience with DevOps teams, leveraging tools such as Docker, Kubernetes, and CI/CD pipelines for deployment and scaling\nStrong proficiency in Python programming for AI/ML and application development\nHands-on experience in developing AI agents using modern IDEs and tools such as GitHub Copilot, Windsurf, and Cursor\nSolid understanding of integrating AI agents with MCP servers and enterprise systems\nPractical exposure to AI/ML and Generative AI use cases, with the ability to translate business needs into real-world implementations\nStrong understanding of REST APIs, microservices architecture, and cloud-native application development",
+    "status": "saved",
+    "match_score": 45,
+    "match_result": {
+      "match_score": 45,
+      "summary": "Pratik's technical skill set aligns surprisingly well with this role — hands-on experience with LangChain, LlamaIndex, PGVector, Docker, FastAPI, and real-world RAG/agent implementations at Fincepta directly map to the core requirements. However, the role demands 6-10 years of experience and Pratik is an early-career engineer (~1-2 years post-internship), which creates a significant credibility gap for a senior enterprise role at Coforge.",
+      "application_strategy": "Lead with your production RAG and multi-agent system at Fincepta as proof of enterprise-grade AI implementation skills, and frame your full-stack ownership (infrastructure to deployment) as rare depth for your level — but be prepared to address the experience gap head-on by emphasizing the complexity and scale of your work rather than years served.",
+      "skills_matched": [
+        "Python",
+        "LangChain",
+        "LlamaIndex",
+        "PGVector",
+        "Docker",
+        "FastAPI",
+        "REST APIs",
+        "Ollama",
+        "PostgreSQL",
+        "CloudWatch"
+      ],
+      "partial_matches": [
+        {
+          "skill": "Kubernetes",
+          "bucket": "Tools & DevOps",
+          "reason": "Has Docker and orchestration experience with Temporal and Proxmox; same deployment paradigm, different orchestration tool"
+        },
+        {
+          "skill": "FAISS / Pinecone",
+          "bucket": "Databases & Storage",
+          "reason": "Has PGVector; same vector database domain, different provider"
+        },
+        {
+          "skill": "Haystack",
+          "bucket": "AI / ML",
+          "reason": "Has LangChain and LlamaIndex; same orchestration framework category, different tool"
+        },
+        {
+          "skill": "CI/CD pipelines",
+          "bucket": "Tools & DevOps",
+          "reason": "Has Docker, CloudWatch, and Git; understands deployment workflows but no explicit CI/CD tooling listed"
+        },
+        {
+          "skill": "Fine-tuning techniques",
+          "bucket": "Frameworks & Libraries",
+          "reason": "Has PyTorch, TensorFlow, and Hugging Face; foundational ML skills present but no explicit fine-tuning project documented"
+        }
+      ],
+      "required_gaps": [
+        "Kubernetes",
+        "CI/CD pipeline design",
+        "6-10 years of professional experience",
+        "Fine-tuning LLMs at scale"
+      ],
+      "nice_to_have_gaps": [
+        "Haystack",
+        "Pinecone",
+        "MCP server integration",
+        "GitHub Copilot / Windsurf / Cursor",
+        "Claude API integration"
+      ],
+      "apply_readiness": {
+        "verdict": "stretch",
+        "reason": "Strong technical skill alignment but the 6-10 year experience requirement is a significant gap that most enterprise recruiters will filter on, making this a reach application unless the hiring team weights skills over tenure."
+      },
+      "profile_gaps": [
+        "Prompt Engineering",
+        "Embeddings design and optimization",
+        "REST API architecture",
+        "Microservices design patterns",
+        "AI agent orchestration"
+      ],
+      "relevant_projects": [
+        {
+          "name": "Multi-Agent Document Intelligence System (Fincepta)",
+          "reason": "Directly demonstrates RAG, LLM integration, and multi-agent orchestration in an enterprise financing context — the exact profile this role seeks.",
+          "talking_points": [
+            "Built a multi-agent document intelligence system using Agno, LlamaIndex, and Gemini that reduced analyst turnaround from 7 days to 24 hours, demonstrating production RAG and agent orchestration at scale.",
+            "Designed custom table extraction and calculation engines to automate complex financial analyst workflows, showing ability to translate business needs into real-world AI implementations."
+          ]
+        },
+        {
+          "name": "Local AI Workflow Infrastructure Platform",
+          "reason": "Shows hands-on infrastructure and DevOps capability with Docker, Temporal, and PostgreSQL — directly relevant to the DevOps collaboration and deployment requirements.",
+          "talking_points": [
+            "Designed isolated service environments with Docker, FastAPI, PostgreSQL, and Temporal for stateful AI workloads, demonstrating cloud-native architecture thinking.",
+            "Implemented secure API gateways and service-to-service communication patterns, directly applicable to microservices and REST API requirements."
+          ]
+        },
+        {
+          "name": "Mantis — AI Product Intelligence Platform",
+          "reason": "Demonstrates LLM orchestration with LangChain and Ollama plus async workflow design with Temporal — maps to the workflow orchestration and LLM integration requirements.",
+          "talking_points": [
+            "Built asynchronous workflow pipelines using Temporal for monitoring, scheduling, and alerting at scale, showing production workflow orchestration experience.",
+            "Integrated self-hosted AI infrastructure with Ollama to reduce costs, demonstrating understanding of LLM deployment optimization and enterprise cost considerations."
+          ]
+        }
+      ],
+      "relevant_experience": "Pratik has ~1-2 years of professional experience as an AI Engineer at Fincepta, where he was promoted from intern after leading production AI initiatives — this demonstrates rapid growth and ownership but falls well short of the 6-10 year requirement for this senior role.",
+      "focus_areas": [
+        "Gain explicit Kubernetes and CI/CD pipeline experience through personal projects or certifications to close the DevOps gap",
+        "Document and articulate any fine-tuning work with PyTorch/Hugging Face more prominently in your profile",
+        "Build a portfolio project explicitly using FAISS or Pinecone to demonstrate vector database breadth beyond PGVector",
+        "Practice articulating MCP server integration concepts and enterprise AI agent deployment patterns for interview discussions"
+      ],
+      "green_flags": [
+        "Production RAG system with LlamaIndex and PGVector — directly matches core role requirements",
+        "Multi-agent orchestration experience with Agno framework — increasingly rare and valuable skill",
+        "Full-stack AI ownership from architecture through deployment — shows enterprise readiness beyond coding",
+        "Strong Python proficiency with FastAPI for building AI APIs — directly applicable to the role's API and microservices requirements"
+      ]
+    },
+    "score_history": [],
+    "created_at": "2026-06-24T19:54:58.997Z",
+    "resume_extra_skills": [
+      "Prompt Engineering",
+      "Embeddings design and optimization",
+      "REST API architecture",
+      "Microservices design patterns",
+      "AI agent orchestration"
+    ],
+    "resume_draft": {
+      "summary": "Applied AI Engineer with hands-on experience building production RAG systems, multi-agent orchestration platforms, and LLM-integrated applications using LangChain, LlamaIndex, and PGVector. Delivered enterprise-grade solutions including a multi-agent document intelligence system that reduced analyst turnaround from 7 days to 24 hours, and a serverless ETL architecture on AWS. Strong proficiency in Python, prompt engineering, embeddings design, and translating complex business requirements into scalable AI implementations.",
+      "skills": [
+        "Python",
+        "LangChain",
+        "LlamaIndex",
+        "RAG Systems",
+        "PGVector",
+        "Prompt Engineering",
+        "Embeddings Design",
+        "FastAPI",
+        "Docker",
+        "PostgreSQL",
+        "REST APIs",
+        "Microservices Architecture",
+        "AI Agent Orchestration",
+        "Ollama",
+        "LLM Integration",
+        "CloudWatch",
+        "AWS",
+        "Git",
+        "Temporal"
+      ],
+      "experience": [
+        {
+          "id": "1782322976136e0",
+          "bullets": [
+            "Designed and deployed a multi-agent document intelligence system using LlamaIndex, Agno, and Gemini that reduced analyst turnaround time from 7 days to 24 hours, demonstrating production RAG and agent orchestration at enterprise scale",
+            "Engineered a feature generation pipeline producing 10,000+ derived financial indicators and built scenario-specific XGBoost models for automated loan risk assessment with real-time inference on AWS infrastructure",
+            "Built an AI-powered PDF compliance pipeline using Gemini and Unstructured, automating document restructuring and achieving Adobe Acrobat ADA compliance validation for enterprise document workflows"
+          ]
+        }
+      ],
+      "projects": [
+        {
+          "id": "1782322976136p0",
+          "bullets": [
+            "Designed isolated service environments with Docker, FastAPI, PostgreSQL, and Temporal for running stateful AI workloads and workflow-driven applications, demonstrating cloud-native architecture and microservices design patterns",
+            "Implemented secure API gateways and service-to-service communication patterns for orchestrated AI pipelines, directly applicable to enterprise REST API and microservices requirements"
+          ]
+        },
+        {
+          "id": "1782322976136p1",
+          "bullets": [
+            "Built asynchronous workflow pipelines using Temporal for large-scale product monitoring, scheduling, and alerting, demonstrating production workflow orchestration and fault-tolerant system design",
+            "Integrated self-hosted LLM infrastructure with Ollama and LangChain to reduce operational costs, showing understanding of LLM deployment optimization and enterprise cost considerations"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "1782323342444",
+    "title": "Untitled Role",
+    "company": "",
+    "link": "",
+    "description": "Technical Requirements Python as primary language. Microsoft Azure required as the primary cloud platform.\nHands-on experience building with Azure AI Foundry.\nClaude Code experience and expertise required, including hands-on development of skills and plugins on the platform. This is non-negotiable for the role.\nLangGraph experience required. Demonstrated ability to design state graphs, conditional edges, and multi-agent compositions.\nModel Context Protocol experience required. Comfortable designing tool calls and building protocol wrappers. Agentic pair programming with generative AI as the primary working mode. Prior experience is required.\nPydantic for data validation and structured outputs across agent systems and APIs. SQL proficiency and PostgreSQL experience.\nVector database experience (pgvector, Azure AI Search, or similar). Familiarity with modern data platforms such as Snowflake and Databricks.\nMulti-step agent systems with proper evaluation and validation.\nStrong fluency across modern frontier language models such as the GPT, Claude, and Gemini model families. Model selection is driven by the requirements of each task and the practical considerations of cost.\nThe discipline to choose mature, proven frameworks for AI engineering work. Technical decisions are grounded in clear engineering justification and supported by data. Docker and containerization for development and deployment workflows.\nFastAPI or equivalent web frameworks for building APIs and backend services. Working knowledge of GitHub workflows, code review discipline, and infrastructure-as-code patterns\nAlthough Microsoft Azure is the primary platform, Google Cloud Platform experience is also valuable and applicable to the practice's work.\nFamiliarity with Azure Container Apps, Azure Kubernetes Services, or similar container orchestration platforms.\nFamiliarity with Apache Software Foundation tools such as Apache Airflow, Apache Kafka, and Apache Flink. Experience with LangChain, PyTorch, or other AI and machine learning frameworks.\nCrewAI or other multi-agent frameworks. LlamaIndex for RAG and data ingestion workflows.\nCelery and Redis for background task processing and caching. Familiarity with A2A (Agent-to-Agent) protocol for inter-agent communication.\nExperience with modern natural language processing tools, including embedding models and entity recognition.\nFamiliarity with vision-language model integration for multi-modal AI use cases. Experience working in regulated markets, including the compliance and risk-management disciplines such environments require.\nPlaywright for end-to-end testing automation.\nFamiliarity with hybrid architectures that integrate deterministic and generative AI techniques.",
+    "status": "saved",
+    "match_score": 35,
+    "match_result": {
+      "match_score": 35,
+      "summary": "Pratik has a strong Python and AI engineering background with hands-on multi-agent system experience using Agno and LlamaIndex, plus relevant financial domain work. However, the role explicitly requires Microsoft Azure as the primary cloud platform, Claude Code expertise, LangGraph, and Model Context Protocol — none of which are present in the profile. The candidate has AWS experience but zero Azure exposure, which is a critical gap for this role.",
+      "skills_matched": [
+        "Python",
+        "FastAPI",
+        "PostgreSQL",
+        "PGVector",
+        "LlamaIndex",
+        "LangChain",
+        "Docker",
+        "PyTorch",
+        "Multi-agent systems",
+        "Hugging Face",
+        "Temporal",
+        "SQL"
+      ],
+      "skills_missing": [
+        "Microsoft Azure",
+        "Azure AI Foundry",
+        "Claude Code",
+        "LangGraph",
+        "Model Context Protocol (MCP)",
+        "CrewAI",
+        "Celery",
+        "Redis",
+        "Apache Airflow/Kafka/Flink",
+        "Snowflake",
+        "Databricks",
+        "Playwright",
+        "A2A protocol",
+        "Azure Container Apps/AKS",
+        "GCP"
+      ],
+      "relevant_projects": [
+        {
+          "name": "Local AI Workflow Infrastructure Platform",
+          "reason": "Demonstrates production-grade workflow orchestration with Temporal, Docker, PostgreSQL, and FastAPI — transferable skills for agent system design, though built on self-hosted infrastructure rather than Azure."
+        },
+        {
+          "name": "Mantis — AI Product Intelligence Platform",
+          "reason": "Shows ability to build asynchronous, fault-tolerant AI pipelines using Temporal and LangChain with embedded LLMs, relevant to multi-step agent systems and workflow-driven architectures."
+        }
+      ],
+      "relevant_experience": "Pratik's role at Fincepta involved designing multi-agent document intelligence systems and production credit underwriting platforms with FastAPI, PostgreSQL, and cloud infrastructure — demonstrating relevant AI engineering and domain expertise in regulated financial markets. However, all cloud work was on AWS, not Azure.",
+      "focus_areas": [
+        "Learn Microsoft Azure fundamentals and deploy a project to Azure (Azure AI Foundry, Azure Container Apps)",
+        "Gain hands-on experience with LangGraph for state graph and conditional edge design",
+        "Study and implement Model Context Protocol (MCP) for tool calling patterns",
+        "Explore Claude Code and Anthropic's ecosystem for agentic development workflows",
+        "Build familiarity with Apache Airflow or Kafka for data pipeline orchestration"
+      ],
+      "green_flags": [
+        "Strong production multi-agent system experience with Agno — directly transferable to agentic AI work",
+        "Financial domain expertise in regulated markets with compliance and risk management exposure",
+        "Deep experience with LlamaIndex and LangChain for RAG and data ingestion workflows",
+        "Proven ability to take ambiguous requirements through architecture, deployment, and operational ownership"
+      ]
+    },
+    "created_at": "2026-06-24T17:49:02.444Z"
+  }
+]

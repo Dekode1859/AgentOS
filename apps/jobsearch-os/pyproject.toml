@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pywebview>=4.4.0",
     "requests>=2.31.0",
+    "playwright>=1.40.0",
 ]
 
 [dependency-groups]
