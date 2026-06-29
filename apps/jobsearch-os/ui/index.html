@@ -201,6 +201,9 @@
             <a id="detail-apply-link" class="job-link-icon hidden" target="_blank" title="Apply link">
               <sl-icon library="lucide" name="external-link"></sl-icon>
             </a>
+            <button id="btn-delete-job" class="job-delete-icon" title="Delete job">
+              <sl-icon library="lucide" name="trash-2"></sl-icon>
+            </button>
           </div>
         </header>
         <nav class="detail-tabs">
@@ -279,6 +282,17 @@
     <div id="browser-profile-section-content"></div>
   </div>
 
+  <div class="settings-divider"></div>
+
+  <div class="settings-section">
+    <h3><sl-icon library="lucide" name="clipboard-paste"></sl-icon> Paste to Analyze</h3>
+    <p class="settings-hint">On the Jobs page, paste a job link (Ctrl/Cmd+V) to scrape and add it automatically.</p>
+    <sl-switch id="auto-analyze-toggle">
+      Auto-analyze pasted jobs
+    </sl-switch>
+    <p class="settings-hint" style="margin-top:6px">When on, each pasted job is also scored against your profile right away — one extra model call per paste.</p>
+  </div>
+
   <sl-button slot="footer" id="btn-settings-close">Close</sl-button>
 </sl-dialog>
 
@@ -288,6 +302,41 @@
   <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
     <sl-button id="btn-reset-profile-cancel">Cancel</sl-button>
     <sl-button id="btn-reset-profile-confirm" variant="danger">Delete</sl-button>
+  </div>
+</sl-dialog>
+
+<!-- ── Delete job confirmation dialog ───────────────────── -->
+<sl-dialog id="delete-job-dialog" label="Delete job?" style="--width: 440px">
+  <div id="delete-job-dialog-body" style="line-height:1.6"></div>
+  <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
+    <sl-button id="btn-delete-job-cancel">Cancel</sl-button>
+    <sl-button id="btn-delete-job-confirm" variant="danger">Delete</sl-button>
+  </div>
+</sl-dialog>
+
+<!-- ── Paste-to-analyze confirmation dialog ─────────────── -->
+<sl-dialog id="paste-job-dialog" label="Analyze this job?" style="--width: 480px">
+  <p class="settings-hint" style="margin-top:0">Detected a job link in your clipboard. Scrape the page and add it as a tracked job?</p>
+  <div style="background:var(--surface-2,#1c1c22);border-radius:8px;padding:10px 12px;word-break:break-all;font-size:13px;line-height:1.5" id="paste-job-url"></div>
+  <p class="settings-hint" style="margin-bottom:0">This runs an AI extraction agent in the background (uses tokens). You can keep working while it adds the job.</p>
+  <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
+    <sl-button id="btn-paste-cancel">Cancel</sl-button>
+    <sl-button id="btn-paste-analyze" variant="primary">
+      <sl-icon slot="prefix" library="lucide" name="sparkles"></sl-icon> Analyze
+    </sl-button>
+  </div>
+</sl-dialog>
+
+<!-- ── Duplicate-URL dialog ─────────────────────────────── -->
+<sl-dialog id="dup-job-dialog" label="Job already saved" style="--width: 460px">
+  <p class="settings-hint" style="margin-top:0">You already have this job saved: <strong id="dup-job-name"></strong>. Open it, or re-scrape and update it with the latest page content?</p>
+  <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
+    <sl-button id="btn-dup-visit" variant="primary">
+      <sl-icon slot="prefix" library="lucide" name="external-link"></sl-icon> Visit job
+    </sl-button>
+    <sl-button id="btn-dup-update">
+      <sl-icon slot="prefix" library="lucide" name="refresh-cw"></sl-icon> Update job
+    </sl-button>
   </div>
 </sl-dialog>
 

@@ -14,6 +14,7 @@ const state = {
   browser: { port: null, jobId: null }, // Playwright application browser session
   browserProfileExists: false,           // true only after Google login is confirmed
   browserProfileEmail: null,             // Google account email from profile-meta.json
+  autoAnalyzePaste: false,               // Settings toggle: auto-run match after paste-add
 };
 
 const PROFILE_PATH = 'profile/profile.json';
@@ -48,6 +49,7 @@ const bridge = (() => {
     setDefaultModel:  (pid, mid)     => call('set_default_model', pid, mid),
     exportResumePdf:  (html, fname)  => call('export_resume_pdf', html, fname),
     browserOpen:              (url) => call('browser_open', url),
+    browserScrape:            (url) => call('browser_scrape', url),
     browserClose:             ()    => call('browser_close'),
     browserDetectFields:      ()    => call('browser_detect_fields'),
     browserGetProfileStatus:  ()    => call('browser_get_profile_status'),
@@ -755,7 +757,11 @@ async function loadJobs() {
 }
 
 async function persistJobs() {
-  await bridge.workspaceWrite(JOBS_PATH, JSON.stringify(state.jobs, null, 2));
+  // Pending/error cards are in-memory only; transient flags never hit disk.
+  const clean = state.jobs
+    .filter(j => !j.pending && !j.error)
+    .map(({ updating, analyzing, _url, ...rest }) => rest);
+  await bridge.workspaceWrite(JOBS_PATH, JSON.stringify(clean, null, 2));
 }
 
 function jobById(id) { return state.jobs.find(j => j.id === id); }
@@ -775,6 +781,29 @@ function renderJobsDashboard() {
   }
   empty.classList.add('hidden'); grid.classList.remove('hidden');
   grid.innerHTML = state.jobs.map(job => {
+    // Background extraction states — keep the dashboard alive while work runs.
+    if (job.pending || job.updating) {
+      return `<div class="job-card job-card-busy" data-id="${escAttr(job.id)}">
+        <div class="jc-spinner"></div>
+        <div class="jc-body">
+          <div class="jc-title">${escHtml(job.updating ? (job.title || 'Updating…') : 'Analyzing…')}</div>
+          <div class="jc-company jc-busy-url">${escHtml(job.link || job.source_url || '')}</div>
+        </div>
+      </div>`;
+    }
+    if (job.error) {
+      return `<div class="job-card job-card-error" data-id="${escAttr(job.id)}">
+        <sl-icon class="jc-err-icon" library="lucide" name="circle-alert"></sl-icon>
+        <div class="jc-body">
+          <div class="jc-title">Couldn't add job</div>
+          <div class="jc-company jc-busy-url">${escHtml(job.error)}</div>
+        </div>
+        <div class="jc-right jc-err-actions">
+          <button class="jc-retry"   data-id="${escAttr(job.id)}">Retry</button>
+          <button class="jc-dismiss" data-id="${escAttr(job.id)}">Dismiss</button>
+        </div>
+      </div>`;
+    }
     const score    = job.match_score != null ? job.match_score : null;
     const scoreCol = score != null ? scoreColorFor(score) : 'var(--dim)';
     const statCol  = STATUS_COLORS[job.status] || 'var(--dim)';
@@ -783,10 +812,13 @@ function renderJobsDashboard() {
     const date = job.created_at
       ? new Date(job.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       : '';
-    return `<div class="job-card" data-id="${escAttr(job.id)}">
-      <div class="jc-score-ring" style="--c:${scoreCol};--score:${score ?? 0}">
+    const ring = job.analyzing
+      ? `<div class="jc-score-ring jc-ring-busy"><div class="jc-spinner"></div></div>`
+      : `<div class="jc-score-ring" style="--c:${scoreCol};--score:${score ?? 0}">
         <span class="jc-score-num">${score != null ? score : '?'}</span>
-      </div>
+      </div>`;
+    return `<div class="job-card" data-id="${escAttr(job.id)}">
+      ${ring}
       <div class="jc-body">
         <div class="jc-title">${escHtml(job.title || 'Untitled Role')}</div>
         ${job.company ? `<div class="jc-company">${escHtml(job.company)}</div>` : ''}
@@ -803,12 +835,47 @@ function renderJobsDashboard() {
           </select>
         </div>
         ${date ? `<div class="jc-date">${escHtml(date)}</div>` : ''}
-        ${job.link ? `<a class="job-link-icon" href="${escAttr(job.link)}" title="Open apply link"
-          target="_blank" onclick="event.stopPropagation()">
-          <sl-icon library="lucide" name="external-link"></sl-icon></a>` : ''}
+        <div class="jc-actions">
+          ${job.link ? `<a class="job-link-icon" href="${escAttr(job.link)}" title="Open apply link"
+            target="_blank" onclick="event.stopPropagation()">
+            <sl-icon library="lucide" name="external-link"></sl-icon></a>` : ''}
+          <button class="jc-delete-btn" data-id="${escAttr(job.id)}" title="Delete job">
+            <sl-icon library="lucide" name="trash-2"></sl-icon></button>
+        </div>
       </div>
     </div>`;
   }).join('');
+}
+
+let _pendingDeleteId = null;
+
+function openDeleteJobDialog(id) {
+  const job = jobById(id);
+  if (!job) return;
+  _pendingDeleteId = id;
+  const name = job.title || 'Untitled Role';
+  const company = job.company ? ` at ${job.company}` : '';
+  document.getElementById('delete-job-dialog-body').innerHTML =
+    `Delete <strong>${escHtml(name)}</strong>${escHtml(company)}? This removes the job and its analysis and resume draft. This cannot be undone.`;
+  document.getElementById('delete-job-dialog').show();
+}
+
+async function doDeleteJob() {
+  const id = _pendingDeleteId;
+  _pendingDeleteId = null;
+  document.getElementById('delete-job-dialog').hide();
+  if (!id) return;
+  const job = jobById(id);
+  state.jobs = state.jobs.filter(j => j.id !== id);
+  await persistJobs();
+  if (state.activeJobId === id) {
+    state.activeJobId = null;
+    renderJobsDashboard();
+    showJobsSubview('dashboard');
+  } else {
+    refreshJobsIfVisible();
+  }
+  showToast(`Deleted: ${job?.title || 'job'}`);
 }
 
 async function updateJobStatus(id, status) {
@@ -878,6 +945,228 @@ async function saveAndAnalyzeJob() {
     showToast('Job saved; analysis failed.');
   } finally {
     btn.loading = false; btn.disabled = false;
+  }
+}
+
+// ── Jobs: paste-to-analyze ────────────────────────────────────────────────────
+// On the Jobs dashboard, Ctrl/Cmd+V with a URL in the clipboard offers to scrape
+// the page and extract a structured job via the `job-extract` agent. Opt-in by
+// design (token cost), so it always asks before running anything.
+const URL_RE = /https?:\/\/[^\s<>"')\]]+/i;
+let _pendingPasteUrl = null;   // URL awaiting confirmation in the paste dialog
+let _dupCtx = null;            // { url, jobId } when the URL is already saved
+
+function detectUrl(text) {
+  const m = (text || '').match(URL_RE);
+  if (!m) return null;
+  return m[0].replace(/[.,;:!?]+$/, '');   // strip trailing sentence punctuation
+}
+
+function isEditableTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+function normalizeUrl(u) { return (u || '').replace(/\/+$/, '').toLowerCase(); }
+
+function findJobByUrl(url) {
+  const n = normalizeUrl(url);
+  return state.jobs.find(j => normalizeUrl(j.link) === n || normalizeUrl(j.source_url) === n);
+}
+
+function onGlobalPaste(e) {
+  // Only on the Jobs dashboard, never while typing in a field or over a dialog.
+  if (!document.getElementById('view-jobs')?.classList.contains('active')) return;
+  if (document.getElementById('jobs-dashboard')?.classList.contains('hidden')) return;
+  if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
+  if (document.querySelector('sl-dialog[open]')) return;
+  const text = (e.clipboardData || window.clipboardData)?.getData('text') || '';
+  const url = detectUrl(text);
+  if (!url) return;            // plain text paste → leave default behavior alone
+  e.preventDefault();
+  const existing = findJobByUrl(url);
+  if (existing) openDupDialog(url, existing);
+  else openPasteJobDialog(url);
+}
+
+function openPasteJobDialog(url) {
+  _pendingPasteUrl = url;
+  document.getElementById('paste-job-url').textContent = url;
+  document.getElementById('paste-job-dialog').show();
+}
+
+function openDupDialog(url, job) {
+  _dupCtx = { url, jobId: job.id };
+  document.getElementById('dup-job-name').textContent = job.title || 'Untitled Role';
+  document.getElementById('dup-job-dialog').show();
+}
+
+// Build the cleaned dump handed to the extraction agent (bounded for token cost).
+function buildScrapeDump(url, scrape) {
+  const MAX = 14000;
+  let text = (scrape.text || '').replace(/\n{3,}/g, '\n\n').trim();
+  if (text.length > MAX) text = text.slice(0, MAX) + '\n\n[...truncated...]';
+  return `SOURCE URL: ${url}\nPAGE TITLE: ${scrape.title || ''}\n\nPAGE TEXT:\n${text}`;
+}
+
+async function runJobExtract(dump, retry) {
+  const prompt = retry
+    ? 'Your previous reply was not valid JSON or was missing the required "title" / "description". '
+      + 'Output ONLY the JSON object now, nothing else.\n\n' + dump
+    : dump;
+  const session = await oc('/session', { method: 'POST', body: '{}' });
+  const msg = await oc(`/session/${session.id}/message`, {
+    method: 'POST',
+    body: JSON.stringify({ agent: 'job-extract', parts: [{ type: 'text', text: prompt }] }),
+  });
+  const reply = (msg?.parts || []).filter(p => p.type === 'text' && p.text).map(p => p.text).join('');
+  try { return parseAgentJson(reply); } catch (_) { return null; }
+}
+
+function validExtraction(x) {
+  return !!(x && typeof x === 'object' && (x.title || '').trim() && (x.description || '').trim());
+}
+
+// Merge agent-extracted fields onto a new or existing job; the app owns identity,
+// status, and provenance fields and never trusts them to the agent.
+function mergeJob(existing, ex, url, scrape, retried) {
+  const now = new Date().toISOString();
+  const base = existing || {
+    id: Date.now().toString(),
+    status: 'saved',
+    created_at: now,
+    match_score: null, match_result: null, score_history: [],
+    resume_draft: null, resume_extra_skills: [],
+  };
+  return {
+    ...base,
+    title:        ex.title || base.title || 'Untitled Role',
+    company:      ex.company || base.company || '',
+    link:         url,                         // app-owned: always the source URL
+    description:  ex.description || base.description || '',
+    location:     ex.location || '',
+    workplace_type:  ex.workplace_type || '',
+    employment_type: ex.employment_type || '',
+    seniority:    ex.seniority || '',
+    compensation: ex.compensation || null,
+    responsibilities: ex.responsibilities || [],
+    requirements:     ex.requirements || [],
+    nice_to_have:     ex.nice_to_have || [],
+    skills:       ex.skills || [],
+    posted_date:  ex.posted_date || '',
+    application_deadline: ex.application_deadline || '',
+    apply_url:    ex.apply_url || '',
+    source:       ex.source || '',
+    source_url:   url,
+    scraped_at:   now,
+    extraction:   { method: 'paste', chars_scraped: (scrape.text || '').length, retried: !!retried },
+  };
+}
+
+function dismissErroredJob(id) {
+  state.jobs = state.jobs.filter(j => j.id !== id);
+  refreshJobsIfVisible();
+}
+
+function retryErroredJob(id) {
+  const job = state.jobs.find(j => j.id === id);
+  if (!job) return;
+  const url = job._url || job.link || job.source_url;
+  state.jobs = state.jobs.filter(j => j.id !== id);   // drop the error card; a fresh spinner replaces it
+  if (url) startPasteAnalyze(url, null);
+}
+
+// Re-render the dashboard only when it's the visible view, so background work
+// never yanks the user out of whatever they're doing.
+function refreshJobsIfVisible() {
+  if (document.getElementById('view-jobs')?.classList.contains('active') &&
+      !document.getElementById('jobs-dashboard')?.classList.contains('hidden')) {
+    renderJobsDashboard();
+  }
+}
+
+// Kick off extraction in the BACKGROUND: drop a spinner card on the dashboard
+// immediately, return control to the user, and resolve the card when done.
+// Supports any number of concurrent pastes (each gets its own card).
+function startPasteAnalyze(url, existingId) {
+  document.getElementById('paste-job-dialog').hide();
+  document.getElementById('dup-job-dialog').hide();
+  _pendingPasteUrl = null;
+  _dupCtx = null;
+
+  let placeholderId;
+  if (existingId) {
+    const job = jobById(existingId);
+    if (job) { job.updating = true; delete job.error; }
+    placeholderId = existingId;
+  } else {
+    placeholderId = 'pending-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    state.jobs.unshift({
+      id: placeholderId, pending: true, status: 'saved',
+      title: 'Analyzing…', company: '', link: url, source_url: url,
+      created_at: new Date().toISOString(),
+    });
+  }
+  showJobsSubview('dashboard');
+  refreshJobsIfVisible();
+  extractJobInBackground(url, existingId, placeholderId);   // not awaited
+}
+
+async function extractJobInBackground(url, existingId, placeholderId) {
+  const slotId = existingId || placeholderId;
+  try {
+    const scrape = await bridge.browserScrape(url);
+    if (!scrape?.ok || !(scrape.text || '').trim()) {
+      throw new Error(scrape?.error || 'Could not read the page');
+    }
+    const dump = buildScrapeDump(url, scrape);
+    let extracted = await runJobExtract(dump, false);
+    let retried = false;
+    if (!validExtraction(extracted)) { retried = true; extracted = await runJobExtract(dump, true); }
+    if (!validExtraction(extracted)) throw new Error('Extraction did not return a usable job');
+
+    const existing = existingId ? jobById(existingId) : null;
+    const merged   = mergeJob(existing, extracted, url, scrape, retried);
+    delete merged.pending; delete merged.updating; delete merged.error;
+
+    const idx = state.jobs.findIndex(j => j.id === slotId);
+    if (idx !== -1) state.jobs[idx] = merged; else state.jobs.unshift(merged);
+    await persistJobs();
+    refreshJobsIfVisible();
+
+    // Auto-chain match analysis only when opted in (Settings toggle). Runs in the
+    // background too — the card shows an analyzing spinner meanwhile.
+    if (state.autoAnalyzePaste) {
+      merged.analyzing = true;
+      refreshJobsIfVisible();
+      if (!state.profile) await loadProfile();
+      if (state.profile) {
+        try {
+          const result = await runMatchAnalysis(merged.title, merged.company, merged.description);
+          merged.match_score  = result.match_score;
+          merged.match_result = result;
+        } catch (_) { /* keep the card even if analysis fails */ }
+      }
+      delete merged.analyzing;
+      await persistJobs();
+      refreshJobsIfVisible();
+    }
+    showToast(existingId ? `Updated: ${merged.title}` : `Added: ${merged.title}`);
+  } catch (e) {
+    const idx = state.jobs.findIndex(j => j.id === slotId);
+    if (idx !== -1) {
+      if (existingId) {
+        delete state.jobs[idx].updating;   // revert the existing card to normal
+      } else {
+        // Turn the spinner card into a dismissible error card — app stays usable.
+        state.jobs[idx] = {
+          ...state.jobs[idx], pending: false, error: e.message || 'Extraction failed', _url: url,
+        };
+      }
+    }
+    refreshJobsIfVisible();
+    showToast(`Couldn't add job: ${e.message}`);
   }
 }
 
@@ -2014,6 +2303,7 @@ function renderMatchInto(idPrefix, m, label) {
 // ── Settings: providers + model ──────────────────────────────────────────────
 function openSettings() {
   document.getElementById('settings-dialog').show();
+  document.getElementById('auto-analyze-toggle').checked = state.autoAnalyzePaste;
   loadProviders();
   loadBrowserProfileStatus().then(renderBrowserProfileSettings);
 }
@@ -2317,9 +2607,18 @@ function wire() {
     renderJobsDashboard(); showJobsSubview('dashboard');
   });
   document.getElementById('job-cards').addEventListener('click', e => {
+    const retry = e.target.closest('.jc-retry');
+    if (retry) { retryErroredJob(retry.dataset.id); return; }
+    const dismiss = e.target.closest('.jc-dismiss');
+    if (dismiss) { dismissErroredJob(dismiss.dataset.id); return; }
+    const delBtn = e.target.closest('.jc-delete-btn');
+    if (delBtn) { openDeleteJobDialog(delBtn.dataset.id); return; }
     if (e.target.closest('.job-status-select') || e.target.closest('.job-link-icon')) return;
     const card = e.target.closest('.job-card');
-    if (card) showJobDetail(card.dataset.id);
+    if (!card) return;
+    const job = jobById(card.dataset.id);
+    if (!job || job.pending || job.updating || job.error) return;  // busy/error cards aren't clickable
+    showJobDetail(card.dataset.id);
   });
   document.getElementById('job-cards').addEventListener('change', e => {
     const sel = e.target.closest('.job-status-select');
@@ -2333,6 +2632,12 @@ function wire() {
     badge.style.setProperty('--status-color', statCol);
   });
   document.getElementById('btn-reanalyze').addEventListener('click', reAnalyzeJob);
+  document.getElementById('btn-delete-job').addEventListener('click', () => {
+    if (state.activeJobId) openDeleteJobDialog(state.activeJobId);
+  });
+  document.getElementById('btn-delete-job-cancel').addEventListener('click',
+    () => document.getElementById('delete-job-dialog').hide());
+  document.getElementById('btn-delete-job-confirm').addEventListener('click', doDeleteJob);
 
   // Job detail — tab strip + all dynamically rendered buttons
   document.getElementById('jobs-detail').addEventListener('click', e => {
@@ -2366,8 +2671,29 @@ function wire() {
   });
   document.getElementById('btn-save-job').addEventListener('click', saveAndAnalyzeJob);
 
+  // Jobs tab — paste-to-analyze (Ctrl/Cmd+V on the dashboard)
+  document.addEventListener('paste', onGlobalPaste);
+  document.getElementById('btn-paste-cancel').addEventListener('click', () => {
+    document.getElementById('paste-job-dialog').hide();
+    _pendingPasteUrl = null;
+  });
+  document.getElementById('btn-paste-analyze').addEventListener('click', () => {
+    if (_pendingPasteUrl) startPasteAnalyze(_pendingPasteUrl, null);
+  });
+  document.getElementById('btn-dup-visit').addEventListener('click', () => {
+    document.getElementById('dup-job-dialog').hide();
+    if (_dupCtx) showJobDetail(_dupCtx.jobId);
+  });
+  document.getElementById('btn-dup-update').addEventListener('click', () => {
+    if (_dupCtx) startPasteAnalyze(_dupCtx.url, _dupCtx.jobId);
+  });
+
   // Settings
   document.getElementById('btn-settings').addEventListener('click', openSettings);
+  document.getElementById('auto-analyze-toggle').addEventListener('sl-change', e => {
+    state.autoAnalyzePaste = e.target.checked;
+    localStorage.setItem('auto-analyze-paste', e.target.checked ? '1' : '');
+  });
   document.getElementById('btn-settings-close').addEventListener('click',
     () => document.getElementById('settings-dialog').hide());
   document.getElementById('btn-save-key').addEventListener('click', saveKey);
@@ -2414,6 +2740,7 @@ function wire() {
 
 // ── Init ────────────────────────────────────────────────────────────────────────
 async function init() {
+  state.autoAnalyzePaste = localStorage.getItem('auto-analyze-paste') === '1';
   wire();
   await new Promise(resolve => {
     if (window.pywebview) return resolve();

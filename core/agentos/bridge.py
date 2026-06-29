@@ -238,6 +238,86 @@ class Bridge:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def browser_scrape(self, url: str) -> dict:
+        """Deterministically fetch a page's visible text for downstream extraction.
+
+        Returns {ok, url, title, text}. If the headed application browser is
+        already running, route the scrape through it (one Chrome per profile
+        dir is the OS limit) using a throwaway tab. Otherwise launch a dedicated
+        headless Chromium with the same persistent profile so logged-in pages
+        (LinkedIn, etc.) resolve — modeled on the export_resume_pdf subprocess.
+        """
+        url = (url or "").strip()
+        if not url:
+            return {"ok": False, "error": "No URL provided"}
+
+        # ── Reuse the running headed browser if one is open ───────────────────
+        port = getattr(self, "_browser_port", None)
+        if port:
+            try:
+                import urllib.request, json as _json
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/scrape",
+                    method="POST",
+                    data=_json.dumps({"url": url}).encode(),
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=40) as resp:
+                    return _json.loads(resp.read().decode())
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+
+        # ── Otherwise scrape headless with the persistent profile ─────────────
+        import subprocess, sys, json as _json
+        profile_dir = str(self._workspace / "browser-profile")
+        script = (
+            "import sys, json, pathlib\n"
+            "from playwright.sync_api import sync_playwright\n"
+            "url, user_dir = sys.argv[1], sys.argv[2]\n"
+            "lock = pathlib.Path(user_dir) / 'SingletonLock'\n"
+            "try:\n"
+            "    if lock.exists() or lock.is_symlink(): lock.unlink()\n"
+            "except Exception: pass\n"
+            "pathlib.Path(user_dir).mkdir(parents=True, exist_ok=True)\n"
+            "with sync_playwright() as pw:\n"
+            "    ctx = pw.chromium.launch_persistent_context(\n"
+            "        user_dir, headless=True, channel='chrome',\n"
+            "        args=['--disable-blink-features=AutomationControlled'])\n"
+            "    page = ctx.pages[0] if ctx.pages else ctx.new_page()\n"
+            "    try:\n"
+            "        page.goto(url, wait_until='domcontentloaded', timeout=25000)\n"
+            "        try: page.wait_for_timeout(1200)\n"
+            "        except Exception: pass\n"
+            "        title = ''\n"
+            "        try: title = page.title()\n"
+            "        except Exception: pass\n"
+            "        text = page.evaluate('() => document.body ? document.body.innerText : \"\"')\n"
+            "        print(json.dumps({'ok': True, 'url': page.url, 'title': title, 'text': text or ''}))\n"
+            "    finally:\n"
+            "        ctx.close()\n"
+        )
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c", script, url, profile_dir],
+                capture_output=True, text=True, timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "Scrape timed out (>60s)"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+        if result.returncode != 0:
+            err = (result.stderr or result.stdout or "scrape failed").strip()
+            return {"ok": False, "error": err[-400:]}
+        # The script prints one JSON line; tolerate any preceding stdout noise.
+        lines = [ln for ln in (result.stdout or "").splitlines() if ln.strip()]
+        if not lines:
+            return {"ok": False, "error": "Scrape produced no output"}
+        try:
+            return _json.loads(lines[-1])
+        except Exception as e:
+            return {"ok": False, "error": f"Could not parse scrape output: {e}"}
+
     def browser_get_profile_status(self) -> dict:
         """Return whether a validated browser profile exists, plus account metadata."""
         meta_path = self._workspace / "browser-profile" / "profile-meta.json"

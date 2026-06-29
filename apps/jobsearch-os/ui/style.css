@@ -438,6 +438,33 @@ html, body {
 }
 .job-card:hover { border-color: var(--border-med); box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
 
+/* Background-extraction card states */
+.job-card-busy, .job-card-error { cursor: default; }
+.job-card-busy:hover { border-color: var(--border); box-shadow: none; }
+.job-card-busy { border-style: dashed; }
+.job-card-error { border-color: color-mix(in srgb, var(--danger, #e5484d) 55%, var(--border)); }
+.jc-busy-url {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 12px; color: var(--muted);
+}
+.jc-err-icon { flex-shrink: 0; font-size: 22px; color: var(--danger, #e5484d); }
+.jc-err-actions { display: flex; gap: 6px; align-items: center; }
+.jc-retry, .jc-dismiss {
+  border: 1px solid var(--border-med); background: var(--surface);
+  color: var(--text); border-radius: 7px; padding: 4px 10px;
+  font-size: 12px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+}
+.jc-retry:hover   { border-color: var(--accent); }
+.jc-dismiss:hover { background: var(--surface-2, #1c1c22); }
+.jc-spinner {
+  flex-shrink: 0; width: 54px; height: 54px; border-radius: 50%;
+  border: 3px solid var(--border-med); border-top-color: var(--accent);
+  animation: app-spin 0.7s linear infinite;
+}
+.jc-ring-busy { background: none; }
+.jc-ring-busy::after { display: none; }
+.jc-ring-busy .jc-spinner { width: 54px; height: 54px; }
+
 /* Conic-gradient score ring */
 .jc-score-ring {
   flex-shrink: 0; width: 54px; height: 54px; border-radius: 50%;
@@ -469,6 +496,16 @@ html, body {
 }
 .jc-date { font-size: 11px; color: var(--dim); white-space: nowrap; }
 
+/* Card action row: apply link + delete (delete reveals on card hover) */
+.jc-actions { display: flex; align-items: center; gap: 8px; }
+.jc-delete-btn {
+  color: var(--dim); font-size: 14px; display: flex; align-items: center;
+  background: none; border: none; cursor: pointer; padding: 0;
+  opacity: 0; transition: opacity 0.15s, color 0.15s;
+}
+.job-card:hover .jc-delete-btn { opacity: 1; }
+.jc-delete-btn:hover { color: var(--danger, #e5484d); }
+
 /* Status badge with transparent select overlay */
 .job-status-wrap { position: relative; display: inline-flex; }
 .job-status-badge {
@@ -487,6 +524,13 @@ html, body {
   text-decoration: none;
 }
 .job-link-icon:hover { color: var(--accent); }
+
+.job-delete-icon {
+  color: var(--muted); font-size: 15px; display: flex; align-items: center;
+  background: none; border: none; cursor: pointer; padding: 0;
+  transition: color 0.15s;
+}
+.job-delete-icon:hover { color: var(--danger, #e5484d); }
 
 /* ── Job detail: split pane ───────────────────────────────────────────────── */
 .detail-header {

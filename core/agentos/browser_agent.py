@@ -9,7 +9,7 @@ while getting ~275 lines of payload out of bridge.py.
 
 Runs headed Playwright Chromium with a persistent profile and exposes a local
 HTTP control API: GET /ping /status, POST /navigate /focus /detect-fields
-/check-google-login /stop. The main thread drives the Playwright event loop via
+/scrape /check-google-login /stop. The main thread drives the Playwright event loop via
 a command queue; a daemon thread serves HTTP; another watches stdin so the
 browser exits when the parent app dies.
 """
@@ -71,6 +71,8 @@ class _H(BaseHTTPRequestHandler):
             self._j(self._dispatch({"t": "focus"}, timeout=5))
         elif path == "/detect-fields":
             self._j(self._dispatch({"t": "detect_fields"}, timeout=15))
+        elif path == "/scrape":
+            self._j(self._dispatch({"t": "scrape", "url": body.get("url", "")}, timeout=35))
         elif path == "/check-google-login":
             self._j(self._dispatch({"t": "check_google_login"}, timeout=20))
         elif path == "/stop":
@@ -254,6 +256,27 @@ with sync_playwright() as _pw:
   return forms;
 })()""")
                 _res_q.put({"ok": True, "forms": _forms or []})
+            elif _t == "scrape":
+                # Scrape in a throwaway tab so the user's active page is untouched.
+                _sp = _ctx.new_page()
+                try:
+                    _sp.goto(_c["url"], wait_until="domcontentloaded", timeout=25000)
+                    try:
+                        _sp.wait_for_timeout(1200)  # let late-rendered content settle
+                    except Exception:
+                        pass
+                    _title = ""
+                    try:
+                        _title = _sp.title()
+                    except Exception:
+                        pass
+                    _text = _sp.evaluate("() => document.body ? document.body.innerText : ''")
+                    _res_q.put({"ok": True, "url": _sp.url, "title": _title, "text": _text or ""})
+                finally:
+                    try:
+                        _sp.close()
+                    except Exception:
+                        pass
             elif _t == "check_google_login":
                 try:
                     _cookies = _ctx.cookies(urls=["https://accounts.google.com", "https://google.com"])

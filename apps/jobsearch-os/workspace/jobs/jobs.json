@@ -1,5 +1,212 @@
 [
   {
+    "id": "1782602837389",
+    "status": "saved",
+    "created_at": "2026-06-27T23:27:17.389Z",
+    "match_score": 68,
+    "match_result": {
+      "match_score": 68,
+      "summary": "Nearly perfect skill alignment for this role — you've built production multi-agent systems with Agno, work with LLMs and RAG pipelines daily, and have hands-on AWS + workflow orchestration experience. The primary gap is experience depth: you have ~1.5 years vs. the 3-5+ years this Technical Lead role targets, which is the main reason this is a stretch rather than a slam dunk.",
+      "application_strategy": "Lead with your Fincepta multi-agent document intelligence system — it's the strongest proof point for agentic AI at scale, and frame your end-to-end ownership from architecture through deployment as evidence of technical leadership maturity beyond your years.",
+      "skills_matched": [
+        "Python",
+        "Machine Learning",
+        "Generative AI (LLMs)",
+        "Agentic AI / AI Agents",
+        "LlamaIndex",
+        "LangChain",
+        "Ollama",
+        "Agno",
+        "PyTorch",
+        "TensorFlow",
+        "XGBoost",
+        "Scikit-Learn",
+        "Docker",
+        "FastAPI",
+        "PostgreSQL",
+        "PGVector",
+        "Prompt Engineering",
+        "Embeddings design and optimization",
+        "REST API architecture",
+        "Microservices design patterns",
+        "AI agent orchestration",
+        "AWS",
+        "PySpark",
+        "Temporal"
+      ],
+      "partial_matches": [
+        {
+          "skill": "Azure/GCP",
+          "bucket": "Cloud Platforms",
+          "reason": "Has AWS; same cloud deployment paradigm, different provider"
+        },
+        {
+          "skill": "FAISS/Pinecone",
+          "bucket": "Databases & Storage",
+          "reason": "Has PGVector; same vector database paradigm, different implementation"
+        },
+        {
+          "skill": "OpenAI API",
+          "bucket": "AI / ML",
+          "reason": "Has Ollama and LangChain; works with LLMs via different provider/interface"
+        },
+        {
+          "skill": "Pandas/NumPy",
+          "bucket": "Programming Languages",
+          "reason": "Used extensively in ML pipeline and PySpark work; not explicitly listed"
+        },
+        {
+          "skill": "CI/CD for ML",
+          "bucket": "Tools & DevOps",
+          "reason": "Has Docker and Git; CI/CD pipelines not explicitly listed but infrastructure experience suggests familiarity"
+        }
+      ],
+      "required_gaps": [
+        "3-5+ years experience (currently ~1.5 years — most critical gap)",
+        "Technical Lead / senior leadership experience"
+      ],
+      "nice_to_have_gaps": [
+        "NLP techniques (text classification, summarization, semantic search — not explicitly listed despite clear usage)",
+        "Responsible AI / model governance / bias mitigation",
+        "Azure or GCP (has AWS only)"
+      ],
+      "apply_readiness": {
+        "verdict": "stretch",
+        "reason": "Your skill set is an exceptional match for this role's technical requirements, but you have ~1.5 years of experience against a 3-5+ year minimum — you're a strong candidate on paper who'd need to demonstrate senior-level judgment and leadership capacity in interviews."
+      },
+      "profile_gaps": [
+        "NLP (document summarization publication, compliance pipeline with text restructuring — clearly used but not in skill buckets)",
+        "RAG / Retrieval Augmented Generation (LlamaIndex is inherently RAG-focused, used in production — not explicitly listed)",
+        "Pandas / NumPy (must use with ML pipelines and PySpark work — not explicitly listed)",
+        "Google Gemini (used in production at Fincepta for document intelligence and compliance — not listed in skills)",
+        "AWS CDK (used for serverless ETL architecture — not listed in skills)"
+      ],
+      "relevant_projects": [
+        {
+          "name": "Fincepta — Multi-Agent Document Intelligence System",
+          "reason": "Directly demonstrates agentic AI with multi-agent orchestration, LLMs, and production deployment — exactly what this role requires.",
+          "talking_points": [
+            "Designed and deployed a multi-agent document intelligence system using Agno and LlamaIndex, reducing analyst turnaround from 7 days to 24 hours — proof of building autonomous agent systems that deliver measurable business impact.",
+            "Built custom table extraction and calculation engines for equipment financing workflows, demonstrating the ability to design domain-specific AI pipelines end-to-end from ingestion through inference."
+          ]
+        },
+        {
+          "name": "Local AI Workflow Infrastructure Platform",
+          "reason": "Shows infrastructure ownership, workflow orchestration, and understanding of distributed AI systems — relevant to the 'design scalable architectures' requirement.",
+          "talking_points": [
+            "Designed isolated service environments for orchestration, API routing, data persistence, and workflow execution using Temporal, Docker, and PostgreSQL — demonstrating production infrastructure design beyond model training.",
+            "Implemented secure API gateways and service-to-service communication patterns, showing understanding of microservices architecture for enterprise AI platforms."
+          ]
+        },
+        {
+          "name": "Mantis — AI Product Intelligence Platform",
+          "reason": "Demonstrates asynchronous workflow pipelines, fault-tolerant systems, and self-hosted AI infrastructure — relevant to production AI system ownership.",
+          "talking_points": [
+            "Built asynchronous workflow pipelines using Temporal for monitoring, scheduling, and alerting at scale — directly applicable to the role's requirement for production AI system observability and continuous improvement.",
+            "Integrated self-hosted AI infrastructure with LangChain and Ollama to reduce operational costs, showing cost-optimization mindset the role requires for production-grade deployments."
+          ]
+        },
+        {
+          "name": "Fincepta — Credit Underwriting Platform",
+          "reason": "Shows ML model development, feature engineering, and real-time inference — directly relevant to the role's ML and deployment requirements.",
+          "talking_points": [
+            "Engineered a feature generation pipeline producing 10,000+ derived financial indicators and built scenario-specific XGBoost models for automated loan risk assessment — demonstrating production ML at scale.",
+            "Built end-to-end pipeline from data ingestion through model training to real-time inference on AWS, showing the full ML lifecycle the role demands."
+          ]
+        }
+      ],
+      "relevant_experience": "Your ~1.5 years at Fincepta span AI engineering, production ML deployment, multi-agent system design, and cloud infrastructure — all directly aligned to this role's domain. The progression from intern to AI Engineer with architecture ownership demonstrates rapid growth, though the tenure is shorter than the role's 3-5 year minimum.",
+      "focus_areas": [
+        "Quantify leadership and technical decision-making: prepare stories about times you drove architecture decisions, mentored others, or resolved production incidents — the role targets senior contributors who lead without the title.",
+        "Study Responsible AI practices: model governance, bias mitigation, and evaluation frameworks — mentioned as a requirement and rarely covered in early-career roles, so this is an easy differentiator.",
+        "Get hands-on with one additional cloud provider (Azure or GCP) — the role lists all three and you're AWS-only right now.",
+        "Deepen NLP expertise explicitly: text classification, summarization techniques, semantic search implementations — you've done this work but it's not in your skill profile, and the JD lists it prominently."
+      ],
+      "green_flags": [
+        "Built and deployed a production multi-agent system with Agno — one of the few candidates who can demonstrate real agentic AI work, not just tutorials.",
+        "End-to-end ownership from architecture through deployment at Fincepta — shows the technical leadership maturity this role needs despite shorter tenure.",
+        "Temporal + workflow orchestration experience is rare and directly relevant — most candidates list AI skills but lack the workflow reliability layer.",
+        "Self-hosted infrastructure platform project demonstrates systems-level thinking beyond just building models — relevant to the 'design scalable architectures' requirement."
+      ]
+    },
+    "score_history": [],
+    "resume_draft": null,
+    "resume_extra_skills": [],
+    "title": "Technical Lead – Gen AI / Agentic AI",
+    "company": "Coforge",
+    "link": "https://www.linkedin.com/jobs/view/4428358303",
+    "description": "Job Title - Technical Lead\nKey Skills - Gen AI, Agentic AI, Python, Machine Learning, LLMs, NLP\nExperience - 3 - 12 Years\nLocation - Greater Noida\n\nWe at Coforge are seeking Technical Lead – Gen AI / Agentic AI with the following skill set:\n\nKey Responsibilities\n• Minimum 5+ years of experience in building scalable AI/ML solutions with strong exposure to Python.\n• Responsible for developing new AI-driven product features, enhancements, and driving technical innovations.\n• Design and develop Generative AI and Agentic AI solutions using LLMs and modern AI frameworks.\n• Build intelligent systems leveraging autonomous agents, multi-agent frameworks, and orchestration workflows.\n• Develop and optimize machine learning models and deep learning architectures for real-world use cases.\n• Implement end-to-end pipelines for data ingestion, preprocessing, model training, evaluation, and deployment.\n• Work with LLMs (OpenAI, Llama, etc.), prompt engineering, fine-tuning, and embeddings-based solutions.\n• Design scalable RAG (Retrieval Augmented Generation) architectures for enterprise applications.\n• Develop APIs and microservices to integrate AI models into enterprise platforms.\n• Optimize model performance, latency, and cost for production-grade deployments.\n• Work with cloud platforms (AWS/Azure/GCP) for deploying and managing AI workloads.\n• Collaborate with cross-functional teams including product, engineering, and data teams.\n• Implement observability, monitoring, and continuous improvement of AI systems.\n• Ensure production stability with strong debugging, troubleshooting, and RCA skills.\n• Implement Responsible AI practices including model governance, bias mitigation, and evaluation frameworks.\n• Strong proficiency in Python and ML libraries (NumPy, Pandas, Scikit-learn, TensorFlow, PyTorch).\n• Experience with NLP techniques including text classification, summarization, and semantic search.\n• Hands-on experience with vector databases (FAISS, Pinecone, etc.).\n• Experience with containerization (Docker) and CI/CD for ML pipelines.\n• Superior problem-solving skills and strong debugging capabilities.\n• Flexible and self-driven with a collaborative approach to problem solving.\n\nMust Have Skills:\n• Python\n• Machine Learning\n• Generative AI (LLMs)\n• Agentic AI / AI Agents",
+    "location": "Greater Noida, Uttar Pradesh, India",
+    "workplace_type": "",
+    "employment_type": "full-time",
+    "seniority": "",
+    "compensation": {
+      "raw": "",
+      "min": null,
+      "max": null,
+      "currency": "",
+      "period": ""
+    },
+    "responsibilities": [
+      "Minimum 5+ years of experience in building scalable AI/ML solutions with strong exposure to Python.",
+      "Responsible for developing new AI-driven product features, enhancements, and driving technical innovations.",
+      "Design and develop Generative AI and Agentic AI solutions using LLMs and modern AI frameworks.",
+      "Build intelligent systems leveraging autonomous agents, multi-agent frameworks, and orchestration workflows.",
+      "Develop and optimize machine learning models and deep learning architectures for real-world use cases.",
+      "Implement end-to-end pipelines for data ingestion, preprocessing, model training, evaluation, and deployment.",
+      "Work with LLMs (OpenAI, Llama, etc.), prompt engineering, fine-tuning, and embeddings-based solutions.",
+      "Design scalable RAG (Retrieval Augmented Generation) architectures for enterprise applications.",
+      "Develop APIs and microservices to integrate AI models into enterprise platforms.",
+      "Optimize model performance, latency, and cost for production-grade deployments.",
+      "Work with cloud platforms (AWS/Azure/GCP) for deploying and managing AI workloads.",
+      "Collaborate with cross-functional teams including product, engineering, and data teams.",
+      "Implement observability, monitoring, and continuous improvement of AI systems.",
+      "Ensure production stability with strong debugging, troubleshooting, and RCA skills.",
+      "Implement Responsible AI practices including model governance, bias mitigation, and evaluation frameworks."
+    ],
+    "requirements": [
+      "Strong proficiency in Python and ML libraries (NumPy, Pandas, Scikit-learn, TensorFlow, PyTorch).",
+      "Experience with NLP techniques including text classification, summarization, and semantic search.",
+      "Hands-on experience with vector databases (FAISS, Pinecone, etc.).",
+      "Experience with containerization (Docker) and CI/CD for ML pipelines.",
+      "Superior problem-solving skills and strong debugging capabilities.",
+      "Flexible and self-driven with a collaborative approach to problem solving."
+    ],
+    "nice_to_have": [],
+    "skills": [
+      "Python",
+      "Machine Learning",
+      "Generative AI",
+      "LLMs",
+      "Agentic AI",
+      "NLP",
+      "NumPy",
+      "Pandas",
+      "Scikit-learn",
+      "TensorFlow",
+      "PyTorch",
+      "FAISS",
+      "Pinecone",
+      "Docker",
+      "AWS",
+      "Azure",
+      "GCP",
+      "RAG",
+      "Deep Learning"
+    ],
+    "posted_date": "2 weeks ago",
+    "application_deadline": "",
+    "apply_url": "https://www.linkedin.com/jobs/view/4428358303",
+    "source": "linkedin",
+    "source_url": "https://www.linkedin.com/jobs/view/4428358303",
+    "scraped_at": "2026-06-27T23:27:17.389Z",
+    "extraction": {
+      "method": "paste",
+      "chars_scraped": 11934,
+      "retried": false
+    }
+  },
+  {
     "id": "1782331113043",
     "title": "Untitled Role",
     "company": "",
@@ -291,35 +498,35 @@
       "AI agent orchestration"
     ],
     "resume_draft": {
-      "summary": "Applied AI Engineer with hands-on experience building production RAG systems, multi-agent orchestration platforms, and LLM-integrated applications using LangChain, LlamaIndex, and PGVector. Delivered enterprise-grade solutions including a multi-agent document intelligence system that reduced analyst turnaround from 7 days to 24 hours, and a serverless ETL architecture on AWS. Strong proficiency in Python, prompt engineering, embeddings design, and translating complex business requirements into scalable AI implementations.",
+      "summary": "AI Engineer with production experience building RAG systems and multi-agent orchestration platforms using LangChain, LlamaIndex, and PGVector. Delivered enterprise-grade document intelligence and credit underwriting systems at Fincepta, combining LLM integration, prompt engineering, and embeddings optimization with full-stack ownership from architecture through deployment.",
       "skills": [
         "Python",
         "LangChain",
         "LlamaIndex",
-        "RAG Systems",
         "PGVector",
-        "Prompt Engineering",
-        "Embeddings Design",
+        "PostgreSQL",
         "FastAPI",
         "Docker",
-        "PostgreSQL",
-        "REST APIs",
-        "Microservices Architecture",
-        "AI Agent Orchestration",
-        "Ollama",
-        "LLM Integration",
-        "CloudWatch",
+        "Prompt Engineering",
+        "Embeddings design and optimization",
+        "REST API architecture",
+        "Microservices design patterns",
+        "AI agent orchestration",
         "AWS",
-        "Git",
-        "Temporal"
+        "Temporal",
+        "Agno",
+        "Ollama",
+        "Gemini",
+        "Hugging Face",
+        "PySpark"
       ],
       "experience": [
         {
           "id": "1782322976136e0",
           "bullets": [
-            "Designed and deployed a multi-agent document intelligence system using LlamaIndex, Agno, and Gemini that reduced analyst turnaround time from 7 days to 24 hours, demonstrating production RAG and agent orchestration at enterprise scale",
-            "Engineered a feature generation pipeline producing 10,000+ derived financial indicators and built scenario-specific XGBoost models for automated loan risk assessment with real-time inference on AWS infrastructure",
-            "Built an AI-powered PDF compliance pipeline using Gemini and Unstructured, automating document restructuring and achieving Adobe Acrobat ADA compliance validation for enterprise document workflows"
+            "Designed and deployed a multi-agent document intelligence system using Agno, LlamaIndex, and Gemini for equipment financing workflows, building custom table extraction and calculation engines that reduced analyst turnaround time from 7 days to 24 hours",
+            "Developed a production credit underwriting platform on AWS, engineering a feature generation pipeline producing 10,000+ derived financial indicators and building scenario-specific XGBoost models for automated loan risk assessment and real-time inference",
+            "Built an AI-powered PDF compliance pipeline using Gemini and Unstructured, automating document restructuring and accessibility tagging to achieve Adobe Acrobat ADA compliance validation"
           ]
         }
       ],
@@ -327,15 +534,15 @@
         {
           "id": "1782322976136p0",
           "bullets": [
-            "Designed isolated service environments with Docker, FastAPI, PostgreSQL, and Temporal for running stateful AI workloads and workflow-driven applications, demonstrating cloud-native architecture and microservices design patterns",
-            "Implemented secure API gateways and service-to-service communication patterns for orchestrated AI pipelines, directly applicable to enterprise REST API and microservices requirements"
+            "Designed isolated service environments using Docker, FastAPI, PostgreSQL, and Temporal for orchestration, API routing, data persistence, and workflow execution of stateful AI workloads",
+            "Implemented secure API gateways and service-to-service communication patterns for distributed AI systems, creating a production-like self-hosted environment for experimentation with workflow reliability"
           ]
         },
         {
           "id": "1782322976136p1",
           "bullets": [
-            "Built asynchronous workflow pipelines using Temporal for large-scale product monitoring, scheduling, and alerting, demonstrating production workflow orchestration and fault-tolerant system design",
-            "Integrated self-hosted LLM infrastructure with Ollama and LangChain to reduce operational costs, showing understanding of LLM deployment optimization and enterprise cost considerations"
+            "Built asynchronous workflow pipelines using Temporal and LangChain for monitoring, scheduling, and alerting across arbitrary e-commerce storefronts at scale",
+            "Integrated self-hosted LLM infrastructure with Ollama for cost-optimized product intelligence extraction, demonstrating understanding of LLM deployment patterns and enterprise cost considerations"
           ]
         }
       ]

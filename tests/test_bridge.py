@@ -78,7 +78,8 @@ class TestBrowserAgentScript(unittest.TestCase):
         compile(bridge_mod._BROWSER_AGENT, "<browser_agent>", "exec")
 
     def test_browser_agent_declares_control_endpoints(self):
-        for ep in ("/navigate", "/focus", "/detect-fields", "/check-google-login", "/stop"):
+        for ep in ("/navigate", "/focus", "/detect-fields", "/scrape",
+                   "/check-google-login", "/stop"):
             self.assertIn(ep, bridge_mod._BROWSER_AGENT, ep)
 
 
@@ -160,6 +161,12 @@ class TestBrowserGuards(BridgeTestBase):
         res = self.bridge.browser_check_google_login()
         self.assertFalse(res["ok"])
         self.assertIn("not open", res["error"].lower())
+
+    def test_scrape_empty_url_is_rejected(self):
+        # Guards the cheap path: no URL must fail fast without spawning Chromium.
+        res = self.bridge.browser_scrape("   ")
+        self.assertFalse(res["ok"])
+        self.assertIn("no url", res["error"].lower())
 
 
 class TestServerRestartMethods(BridgeTestBase):
