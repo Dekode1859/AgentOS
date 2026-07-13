@@ -1,10 +1,8 @@
 """
-Learning OS — a personal, LLM-driven learning platform.
+Lexicon.ai - a personal, source-first knowledge workspace.
 
-This file is the *entire* application bootstrap. All execution mechanics
-(window, OpenCode runtime, sessions, streaming, storage, providers) live in
-AgentOS Core. Learning OS only declares its identity and domain configuration:
-its workspace taxonomy and the agents defined in opencode.json.
+This app owns the domain workflow for raw sources, deterministic processing,
+and an LLM-maintained wiki. Execution mechanics stay in AgentOS Core.
 """
 from pathlib import Path
 import sys
@@ -15,24 +13,23 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
 
 from agentos import run, AppConfig, WorkspaceFolder
+from app_bridge import LexiconBridge
 
 
 APP = AppConfig(
-    app_id="learning-os",
-    app_title="Learning OS",
+    app_id="lexicon",
+    app_title="Lexicon.ai",
     app_root=Path(__file__).resolve().parent,
+    ui_dir="ui",
+    bridge_cls=LexiconBridge,
     workspace_dirname="workspace",
-    # The learning workspace taxonomy. Core is blind to what these mean.
     workspace_folders=(
-        WorkspaceFolder("raw",        "inbox",          "raw"),
-        WorkspaceFolder("processed",  "file-check-2",   "processed"),
-        WorkspaceFolder("knowledge",  "brain",          "knowledge"),
-        WorkspaceFolder("curriculum", "graduation-cap", "curriculum"),
-        WorkspaceFolder("sessions",   "calendar-days",  "sessions"),
+        WorkspaceFolder("raw", "inbox", "raw"),
+        WorkspaceFolder("processed", "file-check-2", "processed"),
+        WorkspaceFolder("wiki", "brain", "wiki"),
     ),
     default_capture_folder="raw",
-    # Preferred default agent on launch (must match a key in opencode.json).
-    default_agent="session-planner",
+    default_agent="librarian",
 )
 
 

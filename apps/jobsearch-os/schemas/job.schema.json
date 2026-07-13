@@ -54,6 +54,11 @@
 
     "match_score":         { "type": ["integer", "null"] },
     "match_result":        { "type": ["object", "null"] },
+    "screening_risks":     { "type": "array" },
+    "analysis_meta":       { "type": ["object", "null"] },
+    "analysis_ignored_skills": { "type": "array", "items": { "type": "string" } },
+    "last_analysis_run_id": { "type": ["string", "null"] },
+    "last_analysis_at":     { "type": ["string", "null"] },
     "score_history":       { "type": "array" },
     "resume_draft":        { "type": ["object", "null"] },
     "resume_extra_skills": { "type": "array", "items": { "type": "string" } }

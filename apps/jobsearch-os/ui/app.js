@@ -15,10 +15,934 @@ const state = {
   browserProfileExists: false,           // true only after Google login is confirmed
   browserProfileEmail: null,             // Google account email from profile-meta.json
   autoAnalyzePaste: false,               // Settings toggle: auto-run match after paste-add
+  analysisHistory: {},                   // { [jobId]: { job_id, runs: [...] } }
+  analysisSnapshots: {},                 // { [jobId]: { [runId]: snapshot } }
+  analysisHistoryLoading: {},            // { [jobId]: true }
 };
 
 const PROFILE_PATH = 'profile/profile.json';
 const DOCS_FOLDER = 'documents';
+const ANALYSIS_HISTORY_ROOT = 'jobs/analysis-history';
+
+// ── Deterministic match engine: constants ─────────────────────────────────────
+const TECH_BUCKET_MAP = {
+  // Programming Languages
+  'python': 'Programming Languages', 'typescript': 'Programming Languages',
+  'javascript': 'Programming Languages', 'java': 'Programming Languages',
+  'c++': 'Programming Languages', 'c#': 'Programming Languages',
+  'go': 'Programming Languages', 'golang': 'Programming Languages',
+  'rust': 'Programming Languages', 'scala': 'Programming Languages',
+  'ruby': 'Programming Languages', 'kotlin': 'Programming Languages',
+  'swift': 'Programming Languages', 'r': 'Programming Languages',
+  'sql': 'Programming Languages', 'bash': 'Programming Languages',
+  'shell': 'Programming Languages', 'php': 'Programming Languages',
+  // Frameworks & Libraries
+  'fastapi': 'Frameworks & Libraries', 'react': 'Frameworks & Libraries',
+  'next.js': 'Frameworks & Libraries', 'nextjs': 'Frameworks & Libraries',
+  'streamlit': 'Frameworks & Libraries', 'pytorch': 'Frameworks & Libraries',
+  'tensorflow': 'Frameworks & Libraries', 'tf': 'Frameworks & Libraries',
+  'xgboost': 'Frameworks & Libraries', 'scikit-learn': 'Frameworks & Libraries',
+  'scikit': 'Frameworks & Libraries', 'sklearn': 'Frameworks & Libraries',
+  'hugging face': 'Frameworks & Libraries', 'huggingface': 'Frameworks & Libraries',
+  'opencv': 'Frameworks & Libraries', 'unstructured': 'Frameworks & Libraries',
+  'flask': 'Frameworks & Libraries', 'django': 'Frameworks & Libraries',
+  'express': 'Frameworks & Libraries', 'spring': 'Frameworks & Libraries',
+  'spring boot': 'Frameworks & Libraries', 'vue': 'Frameworks & Libraries',
+  'angular': 'Frameworks & Libraries', 'keras': 'Frameworks & Libraries',
+  'pandas': 'Frameworks & Libraries', 'numpy': 'Frameworks & Libraries',
+  'scipy': 'Frameworks & Libraries', 'spacy': 'Frameworks & Libraries',
+  'transformers': 'Frameworks & Libraries', 'celery': 'Frameworks & Libraries',
+  'gradio': 'Frameworks & Libraries', 'peft': 'Frameworks & Libraries',
+  'pydantic': 'Frameworks & Libraries',
+  // AI / ML
+  'llamaindex': 'AI / ML', 'langchain': 'AI / ML', 'ollama': 'AI / ML',
+  'openai': 'AI / ML', 'gemini': 'AI / ML', 'anthropic': 'AI / ML',
+  'claude': 'AI / ML', 'gpt': 'AI / ML', 'llm': 'AI / ML',
+  'rag': 'AI / ML', 'embeddings': 'AI / ML', 'vector search': 'AI / ML',
+  'fine-tuning': 'AI / ML', 'fine tuning': 'AI / ML',
+  'prompt engineering': 'AI / ML', 'mlflow': 'AI / ML',
+  'langsmith': 'AI / ML', 'weaviate': 'AI / ML', 'pinecone': 'AI / ML',
+  'chroma': 'AI / ML', 'qdrant': 'AI / ML', 'milvus': 'AI / ML',
+  'multimodal': 'AI / ML', 'multi-modal': 'AI / ML',
+  'llmops': 'AI / ML', 'llm ops': 'AI / ML', 'vertexai': 'AI / ML',
+  'mistral': 'AI / ML', 'mcp': 'AI / ML', 'model context protocol': 'AI / ML',
+  'a2a': 'AI / ML', 'agent-to-agent': 'AI / ML', 'agent to agent': 'AI / ML',
+  // Agentic Frameworks
+  'agno': 'Agentic Frameworks', 'langgraph': 'Agentic Frameworks',
+  'autogen': 'Agentic Frameworks', 'crewai': 'Agentic Frameworks',
+  'crew.ai': 'Agentic Frameworks', 'semantic kernel': 'Agentic Frameworks',
+  'dspy': 'Agentic Frameworks', 'haystack': 'Agentic Frameworks',
+  'flowise': 'Agentic Frameworks', 'n8n': 'Agentic Frameworks',
+  'claude code': 'Agentic Frameworks', 'github copilot': 'Agentic Frameworks',
+  'windsurf': 'Agentic Frameworks', 'cursor': 'Agentic Frameworks',
+  // Cloud Platforms
+  'aws': 'Cloud Platforms', 'azure': 'Cloud Platforms',
+  'gcp': 'Cloud Platforms', 'google cloud': 'Cloud Platforms',
+  's3': 'Cloud Platforms', 'ec2': 'Cloud Platforms',
+  'lambda': 'Cloud Platforms', 'sagemaker': 'Cloud Platforms',
+  'bedrock': 'Cloud Platforms', 'vertex ai': 'Cloud Platforms',
+  'cloud run': 'Cloud Platforms', 'azure openai': 'Cloud Platforms',
+  'azure ai foundry': 'Cloud Platforms', 'azure ai search': 'Cloud Platforms',
+  'azure container apps': 'Cloud Platforms', 'azure kubernetes service': 'Cloud Platforms',
+  'azure kubernetes services': 'Cloud Platforms', 'aks': 'Cloud Platforms',
+  'glue': 'Cloud Platforms', 'redshift': 'Cloud Platforms',
+  'bigquery': 'Cloud Platforms', 'snowflake': 'Cloud Platforms',
+  'databricks': 'Cloud Platforms', 'cloudwatch': 'Cloud Platforms',
+  // Databases & Storage
+  'postgresql': 'Databases & Storage', 'postgres': 'Databases & Storage',
+  'pgvector': 'Databases & Storage', 'mysql': 'Databases & Storage',
+  'mongodb': 'Databases & Storage', 'redis': 'Databases & Storage',
+  'elasticsearch': 'Databases & Storage', 'opensearch': 'Databases & Storage',
+  'cassandra': 'Databases & Storage', 'dynamodb': 'Databases & Storage',
+  'sqlite': 'Databases & Storage', 'neo4j': 'Databases & Storage',
+  'kafka': 'Databases & Storage', 'rabbitmq': 'Databases & Storage',
+  // Tools & DevOps
+  'docker': 'Tools & DevOps', 'temporal': 'Tools & DevOps',
+  'pyspark': 'Tools & DevOps', 'spark': 'Tools & DevOps',
+  'git': 'Tools & DevOps', 'proxmox': 'Tools & DevOps',
+  'kubernetes': 'Tools & DevOps', 'k8s': 'Tools & DevOps',
+  'helm': 'Tools & DevOps', 'terraform': 'Tools & DevOps',
+  'ansible': 'Tools & DevOps', 'jenkins': 'Tools & DevOps',
+  'github actions': 'Tools & DevOps', 'ci/cd': 'Tools & DevOps',
+  'github workflows': 'Tools & DevOps', 'github workflow': 'Tools & DevOps',
+  'airflow': 'Tools & DevOps', 'prefect': 'Tools & DevOps',
+  'dagster': 'Tools & DevOps', 'hadoop': 'Tools & DevOps',
+  'flink': 'Tools & DevOps', 'apache airflow': 'Tools & DevOps',
+  'apache kafka': 'Tools & DevOps', 'apache flink': 'Tools & DevOps',
+  'grafana': 'Tools & DevOps', 'prometheus': 'Tools & DevOps',
+  'nginx': 'Tools & DevOps', 'linux': 'Tools & DevOps',
+  'mlops': 'Tools & DevOps', 'llmops': 'Tools & DevOps',
+  'llm ops': 'Tools & DevOps', 'ci/cd pipelines': 'Tools & DevOps',
+  'playwright': 'Tools & DevOps',
+  // Concept / domain terms - JDs use these abstract labels; map them to the
+  // bucket where the candidate's concrete implementations live so partial
+  // matching fires correctly (e.g. "Deep Learning" → F&L bucket → PyTorch/TF)
+  'machine learning': 'Frameworks & Libraries',
+  'deep learning': 'Frameworks & Libraries',
+  'generative ai': 'AI / ML',
+  'llms': 'AI / ML', 'large language models': 'AI / ML',
+  'agentic ai': 'Agentic Frameworks', 'ai agents': 'Agentic Frameworks',
+  'natural language processing': 'AI / ML',
+  'computer vision': 'Frameworks & Libraries',
+  'data science': 'Frameworks & Libraries',
+  // Vector databases (FAISS, Milvus, etc.) belong with storage
+  'faiss': 'Databases & Storage',
+};
+
+const SKILL_ALIASES = {
+  'ml': 'machine learning', 'nlp': 'natural language processing',
+  'k8s': 'kubernetes',      'dl':  'deep learning',
+  'tf':  'tensorflow',      'js':  'javascript',
+  'ts':  'typescript',      'pg':  'postgresql',
+  'genai': 'generative ai', 'gen ai': 'generative ai',
+  'cv':  'computer vision', 'scikit': 'scikit-learn',
+  'model context protocol': 'mcp', 'agent-to-agent': 'a2a',
+  'agent to agent': 'a2a', 'azure kubernetes service': 'aks',
+  'azure kubernetes services': 'aks', 'github workflows': 'github actions',
+  'github workflow': 'github actions',
+};
+
+const SKILL_FAMILIES = {
+  // Frontend
+  'react': 'frontend', 'next.js': 'frontend', 'nextjs': 'frontend',
+  'streamlit': 'frontend', 'angular': 'frontend', 'vue': 'frontend',
+  'javascript': 'frontend', 'typescript': 'frontend', 'ag grid': 'frontend',
+  'aggrid': 'frontend',
+  // Cloud / platforms
+  'aws': 'cloud', 'azure': 'cloud', 'gcp': 'cloud', 'google cloud': 'cloud',
+  's3': 'cloud', 'ec2': 'cloud', 'lambda': 'cloud', 'sagemaker': 'cloud',
+  'bedrock': 'cloud', 'vertex ai': 'cloud', 'cloud run': 'cloud',
+  'azure openai': 'cloud', 'azure ai foundry': 'cloud', 'azure ai search': 'cloud',
+  'azure container apps': 'cloud', 'aks': 'cloud', 'glue': 'cloud', 'redshift': 'cloud',
+  'bigquery': 'cloud', 'snowflake': 'cloud', 'databricks': 'cloud',
+  'cloudwatch': 'cloud',
+  // Agentic frameworks
+  'agno': 'agentic', 'langgraph': 'agentic', 'autogen': 'agentic',
+  'crewai': 'agentic', 'crew.ai': 'agentic', 'semantic kernel': 'agentic',
+  'dspy': 'agentic', 'haystack': 'agentic', 'flowise': 'agentic', 'n8n': 'agentic',
+  'claude code': 'agentic', 'github copilot': 'agentic', 'windsurf': 'agentic',
+  'cursor': 'agentic',
+  // LLM / RAG stack
+  'llamaindex': 'llm', 'langchain': 'llm', 'rag': 'llm',
+  'embeddings': 'llm', 'vector search': 'llm', 'llm': 'llm', 'llms': 'llm',
+  'large language models': 'llm', 'openai': 'llm', 'anthropic': 'llm',
+  'gemini': 'llm', 'claude': 'llm', 'gpt': 'llm', 'prompt engineering': 'llm',
+  'mlflow': 'llm', 'langsmith': 'llm', 'llmops': 'llm', 'llm ops': 'llm',
+  'generative ai': 'llm', 'modular rag': 'llm', 'mistral': 'llm',
+  'mcp': 'llm', 'model context protocol': 'llm', 'a2a': 'llm',
+  // ML frameworks / model work
+  'pytorch': 'ml', 'tensorflow': 'ml', 'xgboost': 'ml', 'scikit-learn': 'ml',
+  'scikit': 'ml', 'sklearn': 'ml', 'hugging face': 'ml', 'huggingface': 'ml',
+  'transformers': 'ml', 'keras': 'ml', 'opencv': 'ml', 'spacy': 'ml',
+  'machine learning': 'ml', 'deep learning': 'ml', 'natural language processing': 'ml',
+  'computer vision': 'ml', 'data science': 'ml',
+  // Data infrastructure
+  'postgresql': 'data', 'postgres': 'data', 'pgvector': 'data', 'mysql': 'data',
+  'mongodb': 'data', 'redis': 'data', 'elasticsearch': 'data',
+  'opensearch': 'data', 'cassandra': 'data', 'dynamodb': 'data', 'sqlite': 'data',
+  'neo4j': 'data', 'kafka': 'data', 'rabbitmq': 'data', 'snowflake': 'data',
+  'databricks': 'data', 'bigquery': 'data', 'redshift': 'data', 'airflow': 'data',
+  'pyspark': 'data', 'spark': 'data', 'hadoop': 'data', 'faiss': 'data',
+  'pinecone': 'data', 'weaviate': 'data', 'qdrant': 'data',
+  // Ops / delivery
+  'docker': 'ops', 'kubernetes': 'ops', 'k8s': 'ops', 'helm': 'ops',
+  'terraform': 'ops', 'ansible': 'ops', 'jenkins': 'ops', 'github actions': 'ops',
+  'ci/cd': 'ops', 'temporal': 'ops', 'cloudwatch': 'ops', 'grafana': 'ops',
+  'prometheus': 'ops', 'nginx': 'ops', 'linux': 'ops', 'mlops': 'ops',
+  'ci/cd pipelines': 'ops', 'playwright': 'ops',
+  // Fine tuning and doc intelligence
+  'fine-tuning': 'fine_tuning', 'fine tuning': 'fine_tuning',
+  'peft': 'fine_tuning', 'lora': 'fine_tuning', 'qlora': 'fine_tuning',
+  'ocr': 'doc_ai', 'unstructured': 'doc_ai', 'multimodal': 'doc_ai',
+  'multi-modal': 'doc_ai', 'document intelligence': 'doc_ai', 'vision': 'doc_ai',
+  'speech': 'doc_ai', 'api': 'api', 'rest': 'api', 'soap': 'api',
+  'rest api architecture': 'api',
+};
+
+const FAMILY_TO_CANDIDATE_HINTS = {
+  frontend: ['react', 'next.js', 'streamlit', 'javascript', 'typescript', 'angular', 'vue'],
+  cloud: ['aws', 'azure', 'gcp', 'google cloud', 'redshift', 'snowflake', 'databricks', 'cloudwatch'],
+  agentic: ['agno', 'langgraph', 'autogen', 'crewai', 'semantic kernel', 'dspy', 'haystack'],
+  llm: ['llamaindex', 'langchain', 'rag', 'embeddings', 'openai', 'anthropic', 'gemini', 'claude', 'gpt'],
+  ml: ['pytorch', 'tensorflow', 'xgboost', 'scikit-learn', 'hugging face', 'transformers', 'keras', 'opencv'],
+  data: ['postgresql', 'pgvector', 'redis', 'kafka', 'airflow', 'spark', 'pyspark', 'redshift', 'snowflake'],
+  ops: ['docker', 'kubernetes', 'terraform', 'temporal', 'github actions', 'ci/cd', 'jenkins', 'grafana', 'prometheus'],
+  fine_tuning: ['fine-tuning', 'peft', 'lora', 'qlora'],
+  doc_ai: ['ocr', 'unstructured', 'gemini', 'multimodal', 'document intelligence'],
+  api: ['rest api architecture', 'rest', 'soap', 'fastapi', 'flask'],
+};
+
+const YEARS_RE = /(\d+(?:\.\d+)?)\s*(?:\+\s*)?(?:years?|yrs?)(?:\s+of)?\s+(?:professional\s+)?experience/i;
+const REQUIREMENT_HEADER_RE = /^(required skills?|must[- ]have skills?|technical requirements?|requirements?|preferred skills?|nice to have|good to have|bonus points?)\s*:?\s*$/i;
+const HARD_REQUIREMENT_RE = /\b(non-negotiable|must[- ]have|primary cloud|primary language|required as the primary|prior experience is required)\b/i;
+const REQUIRED_HINT_RE = /\b(required|required skills?|hands-on experience|strong proficiency|strong expertise|proven ability|solid understanding|demonstrated ability|experience with|experience integrating|experience in|comfortable designing|ability to|expertise in|proficiency in|skills?:)\b/i;
+const OPTIONAL_HINT_RE = /\b(nice to have|preferred|bonus|good to have|valuable|similar|familiarity with|plus)\b/i;
+const NO_FAMILY_PARTIAL_SKILLS = new Set([
+  'azure',
+  'azure ai foundry',
+  'azure ai search',
+  'claude code',
+  'mcp',
+  'faiss',
+  'pinecone',
+  'haystack',
+  'soap',
+  'playwright',
+]);
+const EXTRA_JOB_SKILLS = [
+  'Azure AI Foundry',
+  'Azure AI Search',
+  'Azure Container Apps',
+  'AKS',
+  'Claude Code',
+  'Model Context Protocol',
+  'MCP',
+  'FAISS',
+  'Pinecone',
+  'Haystack',
+  'Mistral',
+  'Pydantic',
+  'Playwright',
+  'GitHub Copilot',
+  'Windsurf',
+  'Cursor',
+  'GitHub Workflows',
+  'Celery',
+  'Redis',
+  'A2A',
+  'Apache Airflow',
+  'Apache Kafka',
+  'Apache Flink',
+];
+
+// ── Deterministic match engine: core functions ────────────────────────────────
+
+function normalizeSkillToken(str) {
+  if (!str) return '';
+  const s = str.toLowerCase().trim();
+  return SKILL_ALIASES[s] || s;
+}
+
+function formatYears(n) {
+  if (n == null || Number.isNaN(n)) return '';
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+function truncateText(text, maxLen = 180) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  return t.length > maxLen ? `${t.slice(0, maxLen - 1).trimEnd()}…` : t;
+}
+
+function splitSentences(text) {
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function bestEvidenceSnippet(text, terms) {
+  const src = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!src) return '';
+  const loweredTerms = (Array.isArray(terms) ? terms : [terms])
+    .map(t => normalizeSkillToken(t))
+    .filter(Boolean);
+  const sentences = splitSentences(src);
+  for (const sentence of sentences) {
+    const low = sentence.toLowerCase();
+    if (loweredTerms.some(term => term && low.includes(term))) return truncateText(sentence);
+  }
+  return truncateText(src);
+}
+
+function escapeRegex(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function skillMentionedInText(text, skill) {
+  const hay = String(text || '').toLowerCase();
+  const rawNeedle = String(skill || '').toLowerCase().trim();
+  const normalizedNeedle = normalizeSkillToken(skill);
+  if (!hay || !normalizedNeedle || normalizedNeedle.length < 2) return false;
+  const needles = [...new Set([rawNeedle, normalizedNeedle].filter(Boolean))];
+  return needles.some(needle => {
+    if (/^[a-z0-9]+$/.test(needle) && !needle.includes(' ')) {
+      return new RegExp(`\\b${escapeRegex(needle)}\\b`, 'i').test(hay);
+    }
+    return hay.includes(needle);
+  });
+}
+
+function classifyRequirementBucket(line, activeBucket = 'neutral') {
+  const text = String(line || '').trim();
+  if (!text) return activeBucket;
+  const low = text.toLowerCase();
+  if (OPTIONAL_HINT_RE.test(low)) return 'optional';
+  if (HARD_REQUIREMENT_RE.test(low)) return 'required_hard';
+  if (REQUIRED_HINT_RE.test(low)) return 'required';
+  if (activeBucket === 'required_hard') return 'required';
+  if (activeBucket === 'required' || activeBucket === 'optional') return activeBucket;
+  return 'neutral';
+}
+
+function extractRequirementSegments(job) {
+  const segments = [];
+  for (const line of (job?.requirements || [])) {
+    if (String(line || '').trim()) segments.push({ text: String(line).trim(), bucket: 'required' });
+  }
+  for (const line of (job?.nice_to_have || [])) {
+    if (String(line || '').trim()) segments.push({ text: String(line).trim(), bucket: 'optional' });
+  }
+
+  let activeBucket = 'neutral';
+  for (const raw of String(job?.description || '').split(/\n+/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (REQUIREMENT_HEADER_RE.test(line)) {
+      activeBucket = /^preferred|^nice to have|^good to have|^bonus/i.test(line) ? 'optional' : 'required';
+      continue;
+    }
+    if (/^[A-Z][A-Za-z /&-]{2,50}:$/.test(line)) {
+      activeBucket = 'neutral';
+      continue;
+    }
+    const bucket = classifyRequirementBucket(line, activeBucket);
+    if (bucket !== 'neutral') segments.push({ text: line, bucket });
+  }
+
+  return segments;
+}
+
+function parseLooseDate(text, endOfPeriod = false) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  if (/present|current|now/i.test(raw)) return new Date();
+
+  const monthMatch = raw.match(/^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{4})$/i);
+  if (monthMatch) {
+    const monthIdx = ['jan','feb','mar','apr','may','jun','jul','aug','sep','sept','oct','nov','dec']
+      .indexOf(monthMatch[1].slice(0, 3).toLowerCase());
+    if (monthIdx >= 0) return new Date(Number(monthMatch[2]), monthIdx, endOfPeriod ? 28 : 1);
+  }
+
+  const yearMatch = raw.match(/^(\d{4})$/);
+  if (yearMatch) return new Date(Number(yearMatch[1]), endOfPeriod ? 11 : 0, endOfPeriod ? 31 : 1);
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function estimateProfileYears(profile) {
+  let months = 0;
+  for (const exp of (profile?.experience || [])) {
+    const start = parseLooseDate(exp.start, false);
+    const end = parseLooseDate(exp.end, true) || new Date();
+    if (!start || !end || end < start) continue;
+    months += ((end.getFullYear() - start.getFullYear()) * 12) + (end.getMonth() - start.getMonth()) + 1;
+  }
+  return months > 0 ? months / 12 : null;
+}
+
+function extractYearsRequirement(job) {
+  const text = [
+    job?.title,
+    job?.description,
+    ...(job?.requirements || []),
+    ...(job?.responsibilities || []),
+    ...(job?.nice_to_have || []),
+  ].filter(Boolean).join('\n');
+
+  const candidates = [];
+  const rangeRe = /(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*(?:years?|yrs?)(?:\s+of)?\s+experience/ig;
+  const plusRe  = /(\d+(?:\.\d+)?)\s*\+\s*(?:years?|yrs?)(?:\s+of)?\s+experience/ig;
+  const yearsRe  = /(?:minimum|min\.?|at least|over|more than|required|experience required|experience)\D{0,30}?(\d+(?:\.\d+)?)\s*(?:years?|yrs?)(?:\s+of)?\s+experience/ig;
+
+  let m;
+  while ((m = rangeRe.exec(text))) candidates.push(Number(m[1]));
+  while ((m = plusRe.exec(text))) candidates.push(Number(m[1]));
+  while ((m = yearsRe.exec(text))) candidates.push(Number(m[1]));
+  if (!candidates.length) {
+    const loose = text.match(YEARS_RE);
+    if (loose) candidates.push(Number(loose[1]));
+  }
+
+  if (!candidates.length) return { min_years: null, raw: '' };
+  return { min_years: Math.max(...candidates), raw: truncateText(text.match(/.{0,120}(?:years?|yrs?)(?:\s+of)?\s+experience.{0,120}/i)?.[0] || '') };
+}
+
+function buildEvidenceIndex(profile) {
+  const bySkill = new Map();
+  const add = (skill, evidence) => {
+    const norm = normalizeSkillToken(skill);
+    if (!norm) return;
+    if (!bySkill.has(norm)) bySkill.set(norm, []);
+    const arr = bySkill.get(norm);
+    if (arr.length < 4) arr.push(evidence);
+  };
+
+  for (const bucket of (profile?.skill_buckets || [])) {
+    for (const skill of (bucket.skills || [])) {
+      add(skill, {
+        source_type: 'profile_skill',
+        source_label: bucket.category,
+        source_name: skill,
+        snippet: `Listed under ${bucket.category}`,
+      });
+    }
+  }
+
+  for (const exp of (profile?.experience || [])) {
+    for (const tag of (exp.tags || [])) {
+      add(tag, {
+        source_type: 'experience_tag',
+        source_label: `${exp.title || 'Experience'} at ${exp.company || ''}`.trim(),
+        source_name: tag,
+        snippet: bestEvidenceSnippet(exp.raw_description || exp.highlights?.join('. ') || '', tag),
+      });
+    }
+  }
+
+  for (const proj of (profile?.projects || [])) {
+    for (const tech of (proj.tech || [])) {
+      add(tech, {
+        source_type: 'project_tech',
+        source_label: proj.name || 'Project',
+        source_name: tech,
+        snippet: bestEvidenceSnippet(proj.raw_description || proj.highlights?.join('. ') || proj.description || '', tech),
+      });
+    }
+    for (const tag of (proj.tags || [])) {
+      add(tag, {
+        source_type: 'project_tag',
+        source_label: proj.name || 'Project',
+        source_name: tag,
+        snippet: bestEvidenceSnippet(proj.raw_description || proj.highlights?.join('. ') || proj.description || '', tag),
+      });
+    }
+  }
+
+  return bySkill;
+}
+
+function familyForToken(tok) {
+  return SKILL_FAMILIES[normalizeSkillToken(tok)] || null;
+}
+
+function profileEvidenceForSkill(evidenceIndex, skill) {
+  return evidenceIndex.get(normalizeSkillToken(skill)) || [];
+}
+
+function buildProfileSkillIndex(profile) {
+  const byNorm   = new Map(); // normalized → { original, bucket }
+  const byBucket = new Map(); // bucket → Set<normalized>
+
+  const addSkill = (skill, bucket) => {
+    const norm = normalizeSkillToken(skill);
+    if (!norm) return;
+    if (!byNorm.has(norm)) byNorm.set(norm, { original: skill, bucket });
+    if (!byBucket.has(bucket)) byBucket.set(bucket, new Set());
+    byBucket.get(bucket).add(norm);
+
+    // Also index the leading significant token of multi-word skills so that
+    // "RAG" in a JD matches "RAG Architecture", "embeddings" matches
+    // "Embeddings design and optimization", etc. No bucket check - the alias
+    // points to the original skill's bucket for display purposes.
+    const firstTok = norm.split(' ')[0];
+    if (firstTok && firstTok.length >= 3 && firstTok !== norm && !byNorm.has(firstTok)) {
+      byNorm.set(firstTok, { original: skill, bucket });
+      byBucket.get(bucket).add(firstTok);
+    }
+  };
+
+  for (const b of (profile.skill_buckets || [])) {
+    for (const skill of (b.skills || [])) addSkill(skill, b.category);
+  }
+  // Index project tech + experience tags as inferred bucket (partial match only).
+  for (const p of (profile.projects || [])) {
+    for (const t of (p.tech || [])) addSkill(t, TECH_BUCKET_MAP[normalizeSkillToken(t)] || '_inferred');
+  }
+  for (const e of (profile.experience || [])) {
+    for (const t of (e.tags || [])) addSkill(t, TECH_BUCKET_MAP[normalizeSkillToken(t)] || '_inferred');
+  }
+
+  return { byNorm, byBucket };
+}
+
+function extractJobSkillTokens(job, profileIndex) {
+  const all      = new Set();
+  const required = new Set();
+  const optional = new Set();
+
+  const reqText  = (job.requirements   || []).join(' ').toLowerCase();
+  const optText  = (job.nice_to_have   || []).join(' ').toLowerCase();
+  const descText = (job.description    || '').toLowerCase();
+
+  // Phase A - job.skills[] (agent-extracted, most reliable)
+  for (const skill of (job.skills || [])) {
+    const norm = normalizeSkillToken(skill);
+    if (!norm) continue;
+    all.add(norm);
+    const orig = skill.toLowerCase();
+    if (reqText.includes(orig))     required.add(norm);
+    else if (optText.includes(orig)) optional.add(norm);
+    else required.add(norm); // default: treat as required
+  }
+
+  // Phase B - profile skills appearing as substring in requirements prose
+  // (catches skills present in prose but not extracted into job.skills[])
+  const proseSrc = reqText || descText; // fall back to full description for manual jobs
+  for (const [, { original, bucket }] of profileIndex.byNorm) {
+    if (bucket === '_inferred') continue;
+    const orig = original.toLowerCase();
+    if (!proseSrc.includes(orig)) continue;
+    const norm = normalizeSkillToken(original);
+    if (all.has(norm)) continue; // already from Phase A
+    all.add(norm);
+    required.add(norm);
+  }
+
+  // Phase C - profile skills appearing in nice_to_have prose (optional)
+  for (const [, { original, bucket }] of profileIndex.byNorm) {
+    if (bucket === '_inferred') continue;
+    const orig = original.toLowerCase();
+    if (!optText.includes(orig)) continue;
+    const norm = normalizeSkillToken(original);
+    if (all.has(norm)) continue;
+    all.add(norm);
+    optional.add(norm);
+  }
+
+  return { all, required, optional };
+}
+
+function _computeScore(matched, partials, reqGaps) {
+  // Denominator includes partials at half-weight so coverage never exceeds 1.0
+  const total    = Math.max(1, matched.length + partials.length * 0.5 + reqGaps.length);
+  const credit   = matched.length + partials.length * 0.5;
+  const coverage = Math.min(1, credit / total);
+  const penalty  = reqGaps.length > 4 ? 20 : reqGaps.length > 2 ? 10 : reqGaps.length === 2 ? 5 : 0;
+  return Math.max(5, Math.min(95, Math.round(coverage * 100) - penalty));
+}
+
+function _computeVerdict(score, reqGaps, screeningRisks = []) {
+  const riskPenalty = screeningRisks.reduce((sum, r) => sum + (r.penalty || 0), 0);
+  if (score >= 75 && reqGaps.length <= 1 && riskPenalty <= 2) return 'apply_now';
+  if (score >= 55 && reqGaps.length <= 4) return 'stretch';
+  return 'not_yet';
+}
+
+function extractYearsRequirementStrict(job) {
+  const text = [
+    job?.title,
+    job?.description,
+    ...(job?.requirements || []),
+    ...(job?.responsibilities || []),
+    ...(job?.nice_to_have || []),
+  ].filter(Boolean).join('\n');
+
+  const candidates = [];
+  const rangeRe = /(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*(?:years?|yrs?)(?:\s+of)?(?:\s+experience)?/ig;
+  const plusRe  = /(\d+(?:\.\d+)?)\s*\+\s*(?:years?|yrs?)(?:\s+of)?(?:\s+experience)?/ig;
+  const yearsRe = /(?:minimum|min\.?|at least|over|more than|required|experience required|experience)\D{0,20}(\d+(?:\.\d+)?)\s*(?:years?|yrs?)/ig;
+  const labelRangeRe = /experience\D{0,12}(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*(?:years?|yrs?)/ig;
+  const labelPlusRe = /experience\D{0,12}(\d+(?:\.\d+)?)\s*\+\s*(?:years?|yrs?)/ig;
+
+  let m;
+  while ((m = rangeRe.exec(text))) candidates.push(Number(m[1]));
+  while ((m = plusRe.exec(text))) candidates.push(Number(m[1]));
+  while ((m = yearsRe.exec(text))) candidates.push(Number(m[1]));
+  while ((m = labelRangeRe.exec(text))) candidates.push(Number(m[1]));
+  while ((m = labelPlusRe.exec(text))) candidates.push(Number(m[1]));
+  if (!candidates.length) {
+    const loose = text.match(YEARS_RE);
+    if (loose) candidates.push(Number(loose[1]));
+  }
+
+  if (!candidates.length) return { min_years: null, raw: '' };
+  return { min_years: Math.max(...candidates), raw: truncateText(text.match(/.{0,120}(?:experience|years?|yrs?).{0,120}/i)?.[0] || '') };
+}
+
+function buildJobSkillLexicon(profileIndex) {
+  const byNorm = new Map();
+  const add = skill => {
+    const norm = normalizeSkillToken(skill);
+    if (!norm || norm.length < 2) return;
+    const prev = byNorm.get(norm);
+    if (!prev || String(skill).length > String(prev).length) byNorm.set(norm, skill);
+  };
+
+  Object.keys(TECH_BUCKET_MAP).forEach(add);
+  EXTRA_JOB_SKILLS.forEach(add);
+  for (const [norm, meta] of profileIndex.byNorm) {
+    if (meta.bucket === '_inferred') continue;
+    add(meta.original || norm);
+  }
+
+  return [...byNorm.values()].sort((a, b) => String(b).length - String(a).length);
+}
+
+function extractJobSkillTokensStrict(job, profileIndex) {
+  const all      = new Set();
+  const required = new Set();
+  const optional = new Set();
+  const strictRequired = new Set();
+  const displayByNorm  = new Map();
+  const metaByNorm     = new Map();
+  const segments       = extractRequirementSegments(job);
+  const lexicon        = buildJobSkillLexicon(profileIndex);
+
+  const recordSkill = (skill, bucket, sourceText = '', strict = false) => {
+    const norm = normalizeSkillToken(skill);
+    if (!norm) return;
+    all.add(norm);
+    if (!displayByNorm.has(norm)) displayByNorm.set(norm, skill);
+
+    if (bucket === 'optional') {
+      if (!required.has(norm)) optional.add(norm);
+      if (!metaByNorm.has(norm)) metaByNorm.set(norm, { bucket: 'optional', source_text: truncateText(sourceText, 220) });
+      return;
+    }
+
+    required.add(norm);
+    optional.delete(norm);
+    if (bucket === 'required_hard' || strict) strictRequired.add(norm);
+    metaByNorm.set(norm, {
+      bucket: bucket === 'required_hard' || strict ? 'required_hard' : 'required',
+      source_text: truncateText(sourceText, 220),
+    });
+  };
+
+  for (const skill of (job.skills || [])) {
+    const matchedSegment = segments.find(seg => skillMentionedInText(seg.text, skill));
+    recordSkill(
+      skill,
+      matchedSegment?.bucket || 'required',
+      matchedSegment?.text || job.description || '',
+      matchedSegment?.bucket === 'required_hard'
+    );
+  }
+
+  for (const seg of segments) {
+    for (const skill of lexicon) {
+      if (!skillMentionedInText(seg.text, skill)) continue;
+      recordSkill(skill, seg.bucket, seg.text, seg.bucket === 'required_hard');
+    }
+  }
+
+  return { all, required, optional, strictRequired, displayByNorm, metaByNorm };
+}
+
+function canUseFamilyPartial(normTok, family, examples, isStrictRequired = false) {
+  if (isStrictRequired) return false;
+  if (!examples.length) return false;
+  if (NO_FAMILY_PARTIAL_SKILLS.has(normTok)) return false;
+  if (family === 'api' && !['fastapi', 'flask', 'django', 'express'].includes(normTok)) return false;
+  if (family === 'cloud' && /azure ai|azure container apps|aks/.test(normTok)) return false;
+  return true;
+}
+
+function computeScoreStrict(matched, partials, reqGaps, hardGapCount = 0) {
+  const partialCredit = partials.reduce((sum, pm) => sum + (pm.credit ?? 0.75), 0);
+  const total    = Math.max(1, matched.length + partials.length + reqGaps.length);
+  const credit   = matched.length + partialCredit;
+  const coverage = Math.min(1, credit / total);
+  const softGapCount = Math.max(0, reqGaps.length - hardGapCount);
+  const penalty = (hardGapCount * 2) + (softGapCount * 0.9) + (reqGaps.length > 6 ? 1.5 : reqGaps.length > 3 ? 0.75 : 0);
+  return Math.max(5, Math.min(95, Math.round((coverage * 100) - penalty)));
+}
+
+function computeVerdictStrict(score, reqGaps, screeningRisks = [], hardGapCount = 0) {
+  const riskPenalty = screeningRisks.reduce((sum, r) => sum + (r.penalty || 0), 0);
+  if (hardGapCount >= 2) return score >= 60 && riskPenalty <= 4 ? 'stretch' : 'not_yet';
+  if (hardGapCount === 1) return score >= 70 && riskPenalty <= 3 ? 'stretch' : 'not_yet';
+  if (score >= 75 && reqGaps.length <= 1 && riskPenalty <= 2) return 'apply_now';
+  if (score >= 55 && reqGaps.length <= 4) return 'stretch';
+  return 'not_yet';
+}
+
+function _rankProjectsByOverlap(projects, jobTokensAll) {
+  return (projects || [])
+    .map(p => {
+      const matchedTech = (p.tech || []).filter(s => jobTokensAll.has(normalizeSkillToken(s)));
+      const matchedTags = (p.tags || []).filter(s => jobTokensAll.has(normalizeSkillToken(s)));
+      const t = matchedTech.length;
+      const g = matchedTags.length;
+      const anchor = bestEvidenceSnippet(
+        `${p.description || ''}. ${p.raw_description || ''}. ${(p.highlights || []).join('. ')}`,
+        [...matchedTech, ...matchedTags]
+      );
+      return {
+        id: p.id,
+        name: p.name,
+        tech_overlap_count: t,
+        matched_tech: matchedTech,
+        matched_tags: matchedTags,
+        reason: `${t + g} direct signal${(t + g) !== 1 ? 's' : ''} from project stack`,
+        evidence: anchor,
+        _score: t + g * 0.5,
+        talking_points: [],
+      };
+    })
+    .filter(p => p._score > 0)
+    .sort((a, b) => b._score - a._score)
+    .slice(0, 3)
+    .map(({ _score, ...rest }) => rest);
+}
+
+function computeMatchDeterministic(profile, job) {
+  const profileIndex = buildProfileSkillIndex(profile || {});
+  const jobTokens    = extractJobSkillTokensStrict(job || {}, profileIndex);
+  const evidenceIndex = buildEvidenceIndex(profile || {});
+  const yearsReq = extractYearsRequirementStrict(job || {});
+  const estimatedYears = estimateProfileYears(profile || {});
+
+  const skills_matched = [];
+  const matchedNorms   = new Set();
+  for (const [norm, { original, bucket }] of profileIndex.byNorm) {
+    if (bucket === '_inferred') continue; // inferred skills don't count as direct matches
+    if (jobTokens.all.has(norm) && !matchedNorms.has(norm)) {
+      skills_matched.push(original);
+      matchedNorms.add(norm);
+    }
+  }
+
+  const toDisplayName = tok =>
+    jobTokens.displayByNorm.get(tok) ||
+    (job.skills || []).find(s => normalizeSkillToken(s) === tok) ||
+    tok.replace(/\b\w/g, c => c.toUpperCase());
+
+  const partial_matches   = [];
+  const required_gaps     = [];
+  const nice_to_have_gaps = [];
+  const screening_risks   = [];
+  const hardRequiredGaps  = [];
+
+  for (const tok of jobTokens.required) {
+    if (matchedNorms.has(tok)) continue;
+    const isStrictRequired = jobTokens.strictRequired.has(tok);
+    const family = familyForToken(tok);
+    if (family) {
+      const hints = FAMILY_TO_CANDIDATE_HINTS[family] || [];
+      const examples = hints
+        .map(h => profileIndex.byNorm.get(normalizeSkillToken(h))?.original)
+        .filter(Boolean)
+        .slice(0, 2);
+      if (canUseFamilyPartial(tok, family, examples, isStrictRequired)) {
+        partial_matches.push({
+          skill: toDisplayName(tok),
+          bucket: TECH_BUCKET_MAP[tok] || family,
+          reason: `Has ${examples.join(', ')} in the same ${family.replace('_', ' ')} family`,
+          credit: 0.65,
+        });
+        continue;
+      }
+    }
+    required_gaps.push(toDisplayName(tok));
+    if (isStrictRequired) hardRequiredGaps.push(toDisplayName(tok));
+  }
+
+  for (const tok of jobTokens.optional) {
+    if (matchedNorms.has(tok)) continue;
+    if (partial_matches.some(p => normalizeSkillToken(p.skill) === tok)) continue;
+    nice_to_have_gaps.push(toDisplayName(tok));
+  }
+
+  if (yearsReq.min_years != null) {
+    const gap = estimatedYears == null ? null : Math.max(0, yearsReq.min_years - estimatedYears);
+    if (gap != null && gap > 0) {
+      const penalty = Math.min(10, Math.max(2, Math.round(gap * 2.5)));
+      screening_risks.push({
+        type: 'experience_years',
+        severity: gap >= 3 ? 'high' : gap >= 1.5 ? 'medium' : 'low',
+        required_years: yearsReq.min_years,
+        estimated_years: Number(formatYears(estimatedYears)),
+        gap_years: Number(formatYears(gap)),
+        penalty,
+        reason: `JD asks for ${formatYears(yearsReq.min_years)}+ years; profile estimates about ${formatYears(estimatedYears)} years.`,
+      });
+    }
+  }
+
+  const baseScore = computeScoreStrict(skills_matched, partial_matches, required_gaps, hardRequiredGaps.length);
+  const riskPenalty = screening_risks.reduce((sum, r) => sum + (r.penalty || 0), 0);
+  const match_score = Math.max(5, Math.min(95, baseScore - riskPenalty));
+
+  const directMatchedSkills = skills_matched.map(skill => {
+    const evidence = profileEvidenceForSkill(evidenceIndex, skill)[0] || null;
+    return evidence ? {
+      skill,
+      source_type: evidence.source_type,
+      source_label: evidence.source_label,
+      source_name: evidence.source_name,
+      snippet: evidence.snippet,
+    } : { skill, source_type: 'profile_skill', source_label: 'Profile skill buckets', source_name: skill, snippet: 'Matched directly from the profile' };
+  });
+
+  const partialEvidence = partial_matches.map(pm => {
+    const family = familyForToken(pm.skill);
+    const hints = family ? FAMILY_TO_CANDIDATE_HINTS[family] || [] : [];
+    const examples = hints
+      .map(h => profileIndex.byNorm.get(normalizeSkillToken(h))?.original)
+      .filter(Boolean)
+      .slice(0, 2);
+    return {
+      skill: pm.skill,
+      family: pm.bucket,
+      evidence: examples,
+      reason: pm.reason,
+    };
+  });
+
+  const topProjects = _rankProjectsByOverlap(profile?.projects, jobTokens.all).map(p => ({
+    id: p.id,
+    name: p.name,
+    matched_tech: p.matched_tech || [],
+    matched_tags: p.matched_tags || [],
+    evidence: p.evidence || '',
+    reason: p.reason,
+  }));
+
+  const riskText = screening_risks.length
+    ? screening_risks.map(r => r.reason).join(' ')
+    : 'No explicit years-of-experience filter was detected.';
+
+  return {
+    match_score,
+    skills_matched,
+    partial_matches,
+    required_gaps,
+    nice_to_have_gaps,
+    screening_risks,
+    analysis_meta: {
+      candidate_years_experience: estimatedYears == null ? null : Number(formatYears(estimatedYears)),
+      required_years_experience: yearsReq.min_years == null ? null : Number(formatYears(yearsReq.min_years)),
+      years_gap: screening_risks[0]?.gap_years ?? null,
+      base_score: baseScore,
+      risk_penalty: riskPenalty,
+      hard_required_gap_count: hardRequiredGaps.length,
+      hard_required_gaps: hardRequiredGaps,
+      evidence: {
+        matched_skills: directMatchedSkills,
+        partial_matches: partialEvidence,
+        project_anchors: topProjects,
+      },
+    },
+    apply_readiness: {
+      verdict: computeVerdictStrict(match_score, required_gaps, screening_risks, hardRequiredGaps.length),
+      reason: hardRequiredGaps.length
+        ? `Explicit JD requirements are still missing: ${hardRequiredGaps.slice(0, 3).join(', ')}.`
+        : screening_risks.length
+        ? riskText
+        : (required_gaps.length
+            ? `Core skill gaps are still visible in the screen: ${required_gaps.slice(0, 3).join(', ')}.`
+            : 'Core required skills are covered directly; screening risk is mostly tied to optional gaps.'),
+    },
+    relevant_projects: topProjects,
+  };
+}
+
+async function enrichMatchWithLLM(profile, job, deterministicResult) {
+  const det  = deterministicResult;
+  const role = [job.title, job.company].filter(Boolean).join(' at ');
+  const projectsRef = det.relevant_projects.map(p => ({
+    id: p.id,
+    name: p.name,
+    tech_overlap_count: p.tech_overlap_count,
+    matched_tech: p.matched_tech || [],
+    matched_tags: p.matched_tags || [],
+    evidence: p.evidence || '',
+  }));
+
+  const prompt =
+    `PRE-COMPUTED ANALYSIS (do not alter skills_matched, required_gaps, nice_to_have_gaps, partial_matches, screening_risks, analysis_meta, or apply_readiness.verdict in your output):\n` +
+    `match_score: ${det.match_score}\n` +
+    `skills_matched: ${JSON.stringify(det.skills_matched)}\n` +
+    `partial_matches: ${JSON.stringify(det.partial_matches)}\n` +
+    `required_gaps: ${JSON.stringify(det.required_gaps)}\n` +
+    `nice_to_have_gaps: ${JSON.stringify(det.nice_to_have_gaps)}\n` +
+    `screening_risks: ${JSON.stringify(det.screening_risks || [])}\n` +
+    `analysis_meta: ${JSON.stringify(det.analysis_meta || {}, null, 2)}\n` +
+    `apply_readiness.verdict: "${det.apply_readiness.verdict}"\n` +
+    `relevant_projects (ordered by relevance): ${JSON.stringify(projectsRef)}\n\n` +
+    `EVIDENCE RULES:\n` +
+    `- Every summary, gap, and talking point must be grounded in one of the evidence items from analysis_meta.evidence or an exact project/raw_description snippet.\n` +
+    `- Do not use generic filler such as "strong", "aligns well", or "directly relevant" unless immediately followed by the exact proof point.\n` +
+    `- If you cannot cite a project, experience item, or exact profile skill, omit the claim.\n\n` +
+    `FULL PROFILE:\n${JSON.stringify(profile, null, 2)}\n\n` +
+    (role ? `ROLE: ${role}\n\n` : '') +
+    `JOB DESCRIPTION:\n${job.description || ''}`;
+
+  let enrichment;
+  try {
+    enrichment = await runAgentToFile('jd-match', prompt);
+  } catch (_) {
+    return det; // enrichment failure → return deterministic result as-is
+  }
+
+  const clampedScore = Math.max(5, Math.min(95,
+    Math.max(det.match_score - 5, Math.min(det.match_score + 5, enrichment.match_score ?? det.match_score))
+  ));
+  const mergedProjects = det.relevant_projects.map(p => ({
+    ...p,
+    talking_points: (enrichment.relevant_projects || []).find(e => e.id === p.id)?.talking_points || [],
+  }));
+
+  return {
+    ...det,
+    ...enrichment,
+    match_score:       clampedScore,
+    apply_readiness:   { verdict: det.apply_readiness.verdict, reason: det.apply_readiness?.reason || enrichment.apply_readiness?.reason || '' },
+    skills_matched:    det.skills_matched,
+    partial_matches:   det.partial_matches,
+    required_gaps:     det.required_gaps,
+    nice_to_have_gaps: det.nice_to_have_gaps,
+    screening_risks:   det.screening_risks || [],
+    analysis_meta:     det.analysis_meta || {},
+    relevant_projects: mergedProjects,
+  };
+}
 
 function emptyProfile() {
   return {
@@ -47,6 +971,7 @@ const bridge = (() => {
     saveProviderKey:  (pid, key)     => call('save_provider_key', pid, key),
     removeProviderKey:(pid)          => call('remove_provider_key', pid),
     setDefaultModel:  (pid, mid)     => call('set_default_model', pid, mid),
+    openExternal:     (url)          => call('open_external', url),
     exportResumePdf:  (html, fname)  => call('export_resume_pdf', html, fname),
     browserOpen:              (url) => call('browser_open', url),
     browserScrape:            (url) => call('browser_scrape', url),
@@ -84,7 +1009,7 @@ async function handleFiles(fileList) {
   const files = Array.from(fileList || []);
   for (const f of files) {
     if (!isTextFile(f.name)) {
-      showToast(`Skipped ${f.name} — text files only in V0 (.txt/.md/.json)`);
+      showToast(`Skipped ${f.name} - text files only in V0 (.txt/.md/.json)`);
       continue;
     }
     try {
@@ -142,6 +1067,7 @@ async function gatherResumeText() {
 function showProfileSubview(name) {
   ['main', 'ingest'].forEach(n =>
     document.getElementById(`profile-${n}`).classList.toggle('hidden', n !== name));
+  syncChrome('profile', { section: name });
 }
 
 // ── Profile: load ─────────────────────────────────────────────────────────────
@@ -156,7 +1082,7 @@ async function loadProfile() {
   return false;
 }
 
-// ── Profile: merge (deterministic — agent extracts, app merges) ───────────────
+// ── Profile: merge (deterministic - agent extracts, app merges) ───────────────
 function mergeProfile(existing, extracted) {
   const merged = JSON.parse(JSON.stringify(existing));
   const ext = { ...emptyProfile(), ...extracted };
@@ -224,7 +1150,7 @@ async function extractAndMerge() {
     const reply = (msg?.parts || []).filter(p => p.type === 'text' && p.text).map(p => p.text).join('');
     let extracted;
     try { extracted = parseAgentJson(reply); }
-    catch (_) { showToast('Could not parse extraction — try again.'); return; }
+    catch (_) { showToast('Could not parse extraction - try again.'); return; }
 
     state.profile = mergeProfile(state.profile || emptyProfile(), extracted);
     await bridge.workspaceWrite(PROFILE_PATH, JSON.stringify(state.profile, null, 2));
@@ -309,7 +1235,7 @@ const SECTION_VIEWS = {
   identity: (p) => {
     const id = p.identity || {};
     if (!id.name && !id.headline && !id.summary)
-      return psEmpty('No identity info — click Edit to add.');
+      return psEmpty('No identity info - click Edit to add.');
     return `
         ${id.name     ? `<div class="ps-name">${escHtml(id.name)}</div>` : ''}
         ${id.headline ? `<div class="ps-headline">${escHtml(id.headline)}</div>` : ''}
@@ -319,7 +1245,7 @@ const SECTION_VIEWS = {
   contact: (p) => {
     const c = p.contact || {};
     if (!c.email && !c.phone && !(c.links||[]).length)
-      return psEmpty('No contact info — click Edit to add.');
+      return psEmpty('No contact info - click Edit to add.');
     return `
         ${c.email ? `<div class="ps-meta-row"><sl-icon library="lucide" name="mail"></sl-icon>${escHtml(c.email)}</div>` : ''}
         ${c.phone ? `<div class="ps-meta-row"><sl-icon library="lucide" name="phone"></sl-icon>${escHtml(c.phone)}</div>` : ''}
@@ -328,7 +1254,7 @@ const SECTION_VIEWS = {
   },
   skills: (p) => {
     const bs = p.skill_buckets || [];
-    if (!bs.length) return psEmpty('No skills — click Edit to add buckets.');
+    if (!bs.length) return psEmpty('No skills - click Edit to add buckets.');
     return bs.map(b => `
         <div class="skill-bucket-view">
           <div class="skill-bucket-label">${escHtml(b.category)}</div>
@@ -337,7 +1263,7 @@ const SECTION_VIEWS = {
   },
   experience: (p) => {
     const exps = p.experience || [];
-    if (!exps.length) return psEmpty('No experience — click Edit to add.');
+    if (!exps.length) return psEmpty('No experience - click Edit to add.');
     return exps.map(e => `
         <div class="ps-list-item">
           <div class="entry-head">
@@ -352,7 +1278,7 @@ const SECTION_VIEWS = {
   },
   projects: (p) => {
     const projs = p.projects || [];
-    if (!projs.length) return psEmpty('No projects — click Edit to add.');
+    if (!projs.length) return psEmpty('No projects - click Edit to add.');
     return projs.map(pr => `
         <div class="ps-list-item">
           <div class="ps-proj-head">
@@ -369,7 +1295,7 @@ const SECTION_VIEWS = {
   },
   education: (p) => {
     const eds = p.education || [];
-    if (!eds.length) return psEmpty('No education — click Edit to add.');
+    if (!eds.length) return psEmpty('No education - click Edit to add.');
     return eds.map(ed => `
         <div class="ps-list-item">
           <div class="entry-title">${escHtml(ed.degree||'')}</div>
@@ -378,7 +1304,7 @@ const SECTION_VIEWS = {
   },
   certifications: (p) => {
     const certs = p.certifications || [];
-    if (!certs.length) return psEmpty('No certifications — click Edit to add.');
+    if (!certs.length) return psEmpty('No certifications - click Edit to add.');
     return certs.map(c => {
       const obj = typeof c === 'string' ? { name: c, issuer: '', year: '' } : c;
       return `<div class="ps-list-item">
@@ -388,7 +1314,7 @@ const SECTION_VIEWS = {
   },
   publications: (p) => {
     const pubs = p.publications || [];
-    if (!pubs.length) return psEmpty('No publications — click Edit to add.');
+    if (!pubs.length) return psEmpty('No publications - click Edit to add.');
     return pubs.map(pub => `
         <div class="ps-list-item">
           <div class="entry-title">${escHtml(pub.title||'')}</div>
@@ -532,7 +1458,7 @@ function renderExpItemEdit(exp, idx) {
       <div class="form-field"><label class="field-label">End</label>
         <input class="field-input" data-field="end" value="${escAttr(exp.end||'Present')}"/></div>
     </div>
-    <div class="form-field"><label class="field-label">Technical description <span class="field-optional">(architecture, tools, scale — feeds future composition)</span></label>
+    <div class="form-field"><label class="field-label">Technical description <span class="field-optional">(architecture, tools, scale - feeds future composition)</span></label>
       <textarea class="field-input field-textarea-tall" data-field="raw_description">${escHtml(exp.raw_description||'')}</textarea></div>
     <div class="form-field"><label class="field-label">ATS bullets <span class="field-optional">(Action verb + impact/metric)</span></label>
       <div class="highlights-editor">
@@ -561,7 +1487,7 @@ function renderProjItemEdit(proj, idx) {
       <input class="field-input" data-field="description" value="${escAttr(proj.description||'')}"/></div>
     <div class="form-field"><label class="field-label">URL <span class="field-optional">(optional)</span></label>
       <input class="field-input" data-field="url" value="${escAttr(proj.url||'')}"/></div>
-    <div class="form-field"><label class="field-label">Technical description <span class="field-optional">(architecture, design decisions, scale — feeds future composition)</span></label>
+    <div class="form-field"><label class="field-label">Technical description <span class="field-optional">(architecture, design decisions, scale - feeds future composition)</span></label>
       <textarea class="field-input field-textarea-tall" data-field="raw_description">${escHtml(proj.raw_description||'')}</textarea></div>
     <div class="form-field"><label class="field-label">Tech stack</label>
       <div class="skill-chips-edit">
@@ -766,10 +1692,330 @@ async function persistJobs() {
 
 function jobById(id) { return state.jobs.find(j => j.id === id); }
 
+function jsonClone(value, fallback = null) {
+  try { return JSON.parse(JSON.stringify(value)); }
+  catch (_) { return fallback; }
+}
+
+async function readWorkspaceJson(path, fallback = null) {
+  try {
+    const res = await bridge.workspaceRead(path);
+    if (res && res.content && !res.error) return JSON.parse(res.content);
+  } catch (_) {}
+  return jsonClone(fallback, fallback);
+}
+
+function analysisIndexPath(jobId) {
+  return `${ANALYSIS_HISTORY_ROOT}/${jobId}/index.json`;
+}
+
+function analysisRunPath(jobId, runId) {
+  return `${ANALYSIS_HISTORY_ROOT}/${jobId}/${runId}.json`;
+}
+
+function makeAnalysisRunId() {
+  return `${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function sanitizeMatchSnapshot(result) {
+  if (!result) return null;
+  const {
+    match_score, skills_matched, partial_matches, required_gaps, nice_to_have_gaps,
+    screening_risks, analysis_meta, apply_readiness, summary, application_strategy,
+    profile_gaps, relevant_experience, focus_areas, green_flags, relevant_projects,
+  } = result;
+  return jsonClone({
+    match_score,
+    skills_matched,
+    partial_matches,
+    required_gaps,
+    nice_to_have_gaps,
+    screening_risks,
+    analysis_meta,
+    apply_readiness,
+    summary,
+    application_strategy,
+    profile_gaps,
+    relevant_experience,
+    focus_areas,
+    green_flags,
+    relevant_projects,
+  });
+}
+
+function summarizeAnalysisSnapshot(snapshot) {
+  return {
+    score: snapshot?.match_score ?? null,
+    verdict: snapshot?.apply_readiness?.verdict || '',
+    required_gap_count: (snapshot?.required_gaps || []).length,
+    partial_match_count: (snapshot?.partial_matches || []).length,
+    screening_risk_count: (snapshot?.screening_risks || []).length,
+    summary_preview: truncateText(snapshot?.summary || snapshot?.apply_readiness?.reason || '', 220),
+  };
+}
+
+function buildAnalysisRunIndexEntry(run) {
+  const deterministic = run.deterministic || null;
+  const enriched = run.enriched || null;
+  const latest = enriched || deterministic || null;
+  return {
+    id: run.id,
+    created_at: run.created_at,
+    trigger: run.trigger,
+    status: enriched ? 'complete' : 'deterministic_only',
+    deterministic_score: deterministic?.match_score ?? null,
+    final_score: latest?.match_score ?? null,
+    llm_delta: enriched && deterministic ? (enriched.match_score ?? 0) - (deterministic.match_score ?? 0) : 0,
+    ...summarizeAnalysisSnapshot(latest),
+  };
+}
+
+async function loadAnalysisHistory(jobId, { force = false } = {}) {
+  if (!jobId) return { job_id: '', runs: [] };
+  if (!force && state.analysisHistory[jobId]) return state.analysisHistory[jobId];
+  state.analysisHistoryLoading[jobId] = true;
+  if (state.activeJobId === jobId) renderJobDetailCards(jobById(jobId));
+  const index = await readWorkspaceJson(analysisIndexPath(jobId), { job_id: jobId, runs: [] });
+  state.analysisHistory[jobId] = index;
+  delete state.analysisHistoryLoading[jobId];
+  if (state.activeJobId === jobId) renderJobDetailCards(jobById(jobId));
+  return index;
+}
+
+async function loadAnalysisSnapshot(jobId, runId) {
+  if (!jobId || !runId) return null;
+  state.analysisSnapshots[jobId] = state.analysisSnapshots[jobId] || {};
+  if (state.analysisSnapshots[jobId][runId]) return state.analysisSnapshots[jobId][runId];
+  const snapshot = await readWorkspaceJson(analysisRunPath(jobId, runId), null);
+  if (snapshot) state.analysisSnapshots[jobId][runId] = snapshot;
+  return snapshot;
+}
+
+async function persistAnalysisRun(job, { runId = null, createdAt = null, trigger = 'reanalyze', deterministic, enriched = null }) {
+  if (!job?.id || !deterministic) return null;
+  const id = runId || makeAnalysisRunId();
+  const created_at = createdAt || new Date().toISOString();
+  const run = {
+    id,
+    job_id: job.id,
+    created_at,
+    trigger,
+    model: state.defaultModel || '',
+    job_snapshot: {
+      title: job.title || '',
+      company: job.company || '',
+      link: job.link || '',
+      source_url: job.source_url || '',
+    },
+    deterministic: sanitizeMatchSnapshot(deterministic),
+    enriched: sanitizeMatchSnapshot(enriched),
+  };
+
+  await bridge.workspaceWrite(analysisRunPath(job.id, id), JSON.stringify(run, null, 2));
+  const index = await readWorkspaceJson(analysisIndexPath(job.id), { job_id: job.id, runs: [] });
+  const entry = buildAnalysisRunIndexEntry(run);
+  const existingIdx = (index.runs || []).findIndex(item => item.id === id);
+  if (existingIdx >= 0) index.runs[existingIdx] = entry;
+  else index.runs = [entry, ...(index.runs || [])];
+  await bridge.workspaceWrite(analysisIndexPath(job.id), JSON.stringify({ job_id: job.id, runs: index.runs }, null, 2));
+
+  state.analysisHistory[job.id] = { job_id: job.id, runs: index.runs };
+  state.analysisSnapshots[job.id] = state.analysisSnapshots[job.id] || {};
+  state.analysisSnapshots[job.id][id] = run;
+  job.last_analysis_run_id = id;
+  job.last_analysis_at = created_at;
+  return { runId: id, createdAt: created_at };
+}
+
+async function deleteAnalysisHistory(jobId) {
+  if (!jobId) return;
+  const index = await readWorkspaceJson(analysisIndexPath(jobId), { job_id: jobId, runs: [] });
+  for (const run of (index.runs || [])) {
+    await bridge.workspaceDelete(analysisRunPath(jobId, run.id)).catch(() => {});
+  }
+  await bridge.workspaceDelete(analysisIndexPath(jobId)).catch(() => {});
+  delete state.analysisHistory[jobId];
+  delete state.analysisSnapshots[jobId];
+}
+
+function buildDeterministicReason(result) {
+  const hardRequiredGaps = result?.analysis_meta?.hard_required_gaps || [];
+  const screeningRisks = result?.screening_risks || [];
+  const requiredGaps = result?.required_gaps || [];
+  if (hardRequiredGaps.length) {
+    return `Explicit JD requirements are still missing: ${hardRequiredGaps.slice(0, 3).join(', ')}.`;
+  }
+  if (screeningRisks.length) {
+    return screeningRisks.map(r => r.reason).join(' ');
+  }
+  if (requiredGaps.length) {
+    return `Core skill gaps are still visible in the screen: ${requiredGaps.slice(0, 3).join(', ')}.`;
+  }
+  return 'Core required skills are covered directly; screening risk is mostly tied to optional gaps.';
+}
+
+function applyIgnoredSkillsToDeterministic(result, ignoredSkills = []) {
+  const ignored = new Set((ignoredSkills || []).map(normalizeSkillToken).filter(Boolean));
+  if (!result || !ignored.size) return jsonClone(result, result);
+
+  const next = jsonClone(result, result);
+  const keepSkill = value => !ignored.has(normalizeSkillToken(value));
+  const keepObjectSkill = value => !ignored.has(normalizeSkillToken(value?.skill || ''));
+
+  next.skills_matched = (next.skills_matched || []).filter(keepSkill);
+  next.required_gaps = (next.required_gaps || []).filter(keepSkill);
+  next.nice_to_have_gaps = (next.nice_to_have_gaps || []).filter(keepSkill);
+  next.partial_matches = (next.partial_matches || []).filter(keepObjectSkill);
+
+  next.analysis_meta = next.analysis_meta || {};
+  next.analysis_meta.evidence = next.analysis_meta.evidence || {};
+  next.analysis_meta.evidence.matched_skills = (next.analysis_meta.evidence.matched_skills || []).filter(keepObjectSkill);
+  next.analysis_meta.evidence.partial_matches = (next.analysis_meta.evidence.partial_matches || []).filter(keepObjectSkill);
+  next.analysis_meta.hard_required_gaps = (next.analysis_meta.hard_required_gaps || []).filter(keepSkill);
+  next.analysis_meta.hard_required_gap_count = next.analysis_meta.hard_required_gaps.length;
+  next.analysis_meta.ignored_skills = [...ignored];
+
+  const baseScore = computeScoreStrict(
+    next.skills_matched || [],
+    next.partial_matches || [],
+    next.required_gaps || [],
+    next.analysis_meta.hard_required_gap_count || 0
+  );
+  const riskPenalty = (next.screening_risks || []).reduce((sum, r) => sum + (r.penalty || 0), 0);
+  next.analysis_meta.base_score = baseScore;
+  next.analysis_meta.risk_penalty = riskPenalty;
+  next.match_score = Math.max(5, Math.min(95, baseScore - riskPenalty));
+  next.apply_readiness = next.apply_readiness || {};
+  next.apply_readiness.verdict = computeVerdictStrict(
+    next.match_score,
+    next.required_gaps || [],
+    next.screening_risks || [],
+    next.analysis_meta.hard_required_gap_count || 0
+  );
+  next.apply_readiness.reason = buildDeterministicReason(next);
+  return next;
+}
+
+function latestAnalysisHistoryEntry(jobId) {
+  return state.analysisHistory[jobId]?.runs?.[0] || null;
+}
+
+function normalizedSkillSet(values = []) {
+  return [...new Set((values || []).map(normalizeSkillToken).filter(Boolean))].sort();
+}
+
+function sameSkillSelection(left = [], right = []) {
+  const a = normalizedSkillSet(left);
+  const b = normalizedSkillSet(right);
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function computeDisplayedDeterministic(job) {
+  return applyIgnoredSkillsToDeterministic(
+    computeMatchDeterministic(state.profile || {}, job),
+    job.analysis_ignored_skills || []
+  );
+}
+
+function buildAnalysisDisplayResult(job) {
+  if (!job?.match_result) return null;
+  const currentIgnored = job.analysis_ignored_skills || [];
+  const appliedIgnored = job.match_result?.analysis_meta?.ignored_skills || [];
+  const enrichmentStale = !sameSkillSelection(currentIgnored, appliedIgnored);
+  if (!state.profile) {
+    return {
+      ...job.match_result,
+      analysis_state: {
+        ignored_skills: currentIgnored,
+        ignored_count: currentIgnored.length,
+        latest_history: latestAnalysisHistoryEntry(job.id),
+        enrichment_stale: enrichmentStale,
+        baseline_lists: {
+          skills_matched: job.match_result.skills_matched || [],
+          partial_matches: job.match_result.partial_matches || [],
+          required_gaps: job.match_result.required_gaps || [],
+          nice_to_have_gaps: job.match_result.nice_to_have_gaps || [],
+        },
+      },
+    };
+  }
+  const baseline = computeMatchDeterministic(state.profile || {}, job);
+  const deterministic = applyIgnoredSkillsToDeterministic(
+    baseline,
+    currentIgnored
+  );
+  const base = job.match_result || {};
+  const mergedProjects = (deterministic.relevant_projects || []).map(pr => ({
+    ...pr,
+    talking_points: (base.relevant_projects || []).find(item => item.id === pr.id)?.talking_points || [],
+  }));
+
+  return {
+    ...deterministic,
+    summary: base.summary || deterministic.summary || '',
+    application_strategy: base.application_strategy || '',
+    profile_gaps: base.profile_gaps || [],
+    relevant_experience: base.relevant_experience || '',
+    focus_areas: base.focus_areas || [],
+    green_flags: base.green_flags || [],
+    relevant_projects: mergedProjects,
+    analysis_state: {
+      ignored_skills: currentIgnored,
+      ignored_count: currentIgnored.length,
+      latest_history: latestAnalysisHistoryEntry(job.id),
+      enrichment_stale: enrichmentStale,
+      baseline_lists: {
+        skills_matched: baseline.skills_matched || [],
+        partial_matches: baseline.partial_matches || [],
+        required_gaps: baseline.required_gaps || [],
+        nice_to_have_gaps: baseline.nice_to_have_gaps || [],
+      },
+    },
+  };
+}
+
+async function syncJobDisplayedScore(job, { persist = true } = {}) {
+  if (!job?.match_result) return;
+  const display = buildAnalysisDisplayResult(job);
+  if (!display) return;
+  job.match_score = display.match_score;
+  if (persist) await persistJobs();
+}
+
+async function toggleIgnoredAnalysisSkill(skill) {
+  const job = jobById(state.activeJobId);
+  if (!job || !skill) return;
+  const norm = normalizeSkillToken(skill);
+  const current = new Set((job.analysis_ignored_skills || []).map(normalizeSkillToken).filter(Boolean));
+  if (current.has(norm)) current.delete(norm);
+  else current.add(norm);
+  job.analysis_ignored_skills = [...current];
+  await syncJobDisplayedScore(job);
+  renderJobDetailCards(job);
+  renderResumeSuggestions(job);
+  renderJobsDashboard();
+}
+
+async function resetIgnoredAnalysisSkills() {
+  const job = jobById(state.activeJobId);
+  if (!job || !(job.analysis_ignored_skills || []).length) return;
+  job.analysis_ignored_skills = [];
+  await syncJobDisplayedScore(job);
+  renderJobDetailCards(job);
+  renderResumeSuggestions(job);
+  renderJobsDashboard();
+}
+
 // ── Jobs: sub-view management ────────────────────────────────────────────────
 function showJobsSubview(name) {
   ['dashboard', 'add', 'detail'].forEach(n =>
     document.getElementById(`jobs-${n}`).classList.toggle('hidden', n !== name));
+  if (name === 'detail') {
+    const activeTab = document.querySelector('.detail-tab.active')?.dataset.tab || 'analysis';
+    syncChrome('jobs', { section: 'detail', tab: activeTab, job: jobById(state.activeJobId) });
+    return;
+  }
+  syncChrome('jobs', { section: name });
 }
 
 // ── Jobs: dashboard ──────────────────────────────────────────────────────────
@@ -781,7 +2027,7 @@ function renderJobsDashboard() {
   }
   empty.classList.add('hidden'); grid.classList.remove('hidden');
   grid.innerHTML = state.jobs.map(job => {
-    // Background extraction states — keep the dashboard alive while work runs.
+    // Background extraction states - keep the dashboard alive while work runs.
     if (job.pending || job.updating) {
       return `<div class="job-card job-card-busy" data-id="${escAttr(job.id)}">
         <div class="jc-spinner"></div>
@@ -866,6 +2112,7 @@ async function doDeleteJob() {
   document.getElementById('delete-job-dialog').hide();
   if (!id) return;
   const job = jobById(id);
+  await deleteAnalysisHistory(id);
   state.jobs = state.jobs.filter(j => j.id !== id);
   await persistJobs();
   if (state.activeJobId === id) {
@@ -927,22 +2174,47 @@ async function saveAndAnalyzeJob() {
   state.jobs.unshift(job);
   await persistJobs();
 
-  const btn = document.getElementById('btn-save-job');
-  const msg = document.getElementById('add-job-status-msg');
+  const btn   = document.getElementById('btn-save-job');
+  const msg   = document.getElementById('add-job-status-msg');
+  const label = [title, company].filter(Boolean).join(' · ');
   btn.loading = true; btn.disabled = true;
-  msg.textContent = 'Analyzing against your profile…'; msg.classList.remove('hidden');
+  msg.textContent = 'Scoring skills…'; msg.classList.remove('hidden');
 
+  // Phase 1 - deterministic, instant
+  const profile = state.profile || {};
+  const partial = state.profile ? computeDisplayedDeterministic(job) : computeMatchDeterministic(profile, job);
+  job.match_score  = partial.match_score;
+  job.match_result = partial;
+  const analysisRun = await persistAnalysisRun(job, {
+    trigger: 'save_and_analyze',
+    deterministic: partial,
+  });
+  await persistJobs();
+  renderMatchInto('add-job-match', partial, label);
+  injectEnrichingShimmer('add-job-match');
+  msg.textContent = 'Skills scored - enriching with AI…';
+
+  // Phase 2 - LLM narrative enrichment
   try {
-    const result = await runMatchAnalysis(job.title, job.company, job.description);
-    job.match_score  = result.match_score;
-    job.match_result = result;
+    const full = await enrichMatchWithLLM(profile, job, partial);
+    job.match_score  = full.match_score;
+    job.match_result = full;
+    await persistAnalysisRun(job, {
+      runId: analysisRun?.runId,
+      createdAt: analysisRun?.createdAt,
+      trigger: 'save_and_analyze',
+      deterministic: partial,
+      enriched: full,
+    });
     await persistJobs();
+    removeEnrichingShimmer('add-job-match');
+    renderMatchInto('add-job-match', full, label);
     msg.classList.add('hidden');
-    renderMatchInto('add-job-match', result, [title, company].filter(Boolean).join(' · '));
     showToast('Job saved and analyzed.');
   } catch (e) {
-    msg.textContent = `Saved — analysis failed: ${e.message}`;
-    showToast('Job saved; analysis failed.');
+    removeEnrichingShimmer('add-job-match');
+    msg.textContent = `Saved - AI enrichment failed: ${e.message}`;
+    showToast('Job saved; enrichment failed.');
   } finally {
     btn.loading = false; btn.disabled = false;
   }
@@ -1012,16 +2284,10 @@ function buildScrapeDump(url, scrape) {
 
 async function runJobExtract(dump, retry) {
   const prompt = retry
-    ? 'Your previous reply was not valid JSON or was missing the required "title" / "description". '
-      + 'Output ONLY the JSON object now, nothing else.\n\n' + dump
+    ? 'Your previous attempt did not produce a readable output file, or the file was missing '
+      + '"title" / "description". Write the complete JSON to the OUTPUT_FILE now.\n\n' + dump
     : dump;
-  const session = await oc('/session', { method: 'POST', body: '{}' });
-  const msg = await oc(`/session/${session.id}/message`, {
-    method: 'POST',
-    body: JSON.stringify({ agent: 'job-extract', parts: [{ type: 'text', text: prompt }] }),
-  });
-  const reply = (msg?.parts || []).filter(p => p.type === 'text' && p.text).map(p => p.text).join('');
-  try { return parseAgentJson(reply); } catch (_) { return null; }
+  try { return await runAgentToFile('job-extract', prompt); } catch (_) { return null; }
 }
 
 function validExtraction(x) {
@@ -1135,22 +2401,42 @@ async function extractJobInBackground(url, existingId, placeholderId) {
     await persistJobs();
     refreshJobsIfVisible();
 
-    // Auto-chain match analysis only when opted in (Settings toggle). Runs in the
-    // background too — the card shows an analyzing spinner meanwhile.
+    // Auto-chain match analysis only when opted in (Settings toggle).
+    // Phase 1 (deterministic) runs instantly and updates the card immediately.
+    // Phase 2 (LLM enrichment) fires in the background without blocking the paste flow.
     if (state.autoAnalyzePaste) {
-      merged.analyzing = true;
-      refreshJobsIfVisible();
       if (!state.profile) await loadProfile();
       if (state.profile) {
-        try {
-          const result = await runMatchAnalysis(merged.title, merged.company, merged.description);
-          merged.match_score  = result.match_score;
-          merged.match_result = result;
-        } catch (_) { /* keep the card even if analysis fails */ }
+        const partial = computeDisplayedDeterministic(merged);
+        merged.match_score  = partial.match_score;
+        merged.match_result = partial;
+        const analysisRun = await persistAnalysisRun(merged, {
+          trigger: existingId ? 'update_scrape_analyze' : 'scrape_analyze',
+          deterministic: partial,
+        });
+        await persistJobs();
+        refreshJobsIfVisible();
+
+        enrichMatchWithLLM(state.profile, merged, partial).then(async full => {
+          const live = jobById(merged.id);
+          if (!live) return;
+          live.match_score  = full.match_score;
+          live.match_result = full;
+          await persistAnalysisRun(live, {
+            runId: analysisRun?.runId,
+            createdAt: analysisRun?.createdAt,
+            trigger: existingId ? 'update_scrape_analyze' : 'scrape_analyze',
+            deterministic: partial,
+            enriched: full,
+          });
+          await persistJobs();
+          if (state.activeJobId === live.id) {
+            renderJobDetailCards(live);
+            renderResumeSuggestions(live);
+          }
+          refreshJobsIfVisible();
+        }).catch(() => {}); // enrichment failure is non-fatal; Phase 1 result already saved
       }
-      delete merged.analyzing;
-      await persistJobs();
-      refreshJobsIfVisible();
     }
     showToast(existingId ? `Updated: ${merged.title}` : `Added: ${merged.title}`);
   } catch (e) {
@@ -1159,7 +2445,7 @@ async function extractJobInBackground(url, existingId, placeholderId) {
       if (existingId) {
         delete state.jobs[idx].updating;   // revert the existing card to normal
       } else {
-        // Turn the spinner card into a dismissible error card — app stays usable.
+        // Turn the spinner card into a dismissible error card - app stays usable.
         state.jobs[idx] = {
           ...state.jobs[idx], pending: false, error: e.message || 'Extraction failed', _url: url,
         };
@@ -1187,7 +2473,15 @@ function switchDetailTab(name) {
     document.getElementById(`tab-${n}`).classList.toggle('hidden', n !== name);
     document.querySelector(`.detail-tab[data-tab="${n}"]`)?.classList.toggle('active', n === name);
   });
-  if (name === 'resume') scaleResumePage();
+  const job = jobById(state.activeJobId);
+  if (job) syncChrome('jobs', { section: 'detail', tab: name, job });
+  if (name === 'resume') {
+    if (job) {
+      renderResumeSuggestions(job);
+      renderResumePreview(job);
+    }
+    scaleResumePage();
+  }
   if (name === 'application' && state.browser.port) detectApplicationFields();
   updatePaneHeight();
 }
@@ -1212,10 +2506,6 @@ function showJobDetail(id) {
   sel.innerHTML = Object.entries(STATUS_LABELS)
     .map(([v, l]) => `<option value="${v}"${job.status === v ? ' selected' : ''}>${l}</option>`).join('');
 
-  const applyLink = document.getElementById('detail-apply-link');
-  if (job.link) { applyLink.href = job.link; applyLink.classList.remove('hidden'); }
-  else applyLink.classList.add('hidden');
-
   // Close browser if we're switching to a different job
   if (state.browser.port && state.browser.jobId !== id) closeApplicationBrowser();
 
@@ -1223,6 +2513,7 @@ function showJobDetail(id) {
   renderResumeSuggestions(job);
   renderResumePreview(job);
   renderApplicationTab(job);
+  loadAnalysisHistory(id).catch(() => {});
   switchDetailTab('analysis');
   showJobsSubview('detail');
   // Measure available height after DOM has settled for this detail view.
@@ -1241,7 +2532,7 @@ const MC_ICONS = {
   file:      `<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><line x1="10" x2="16" y1="13" y2="13"/><line x1="10" x2="14" y1="17" y2="17"/>`,
 };
 
-function renderJobDetailCards(job) {
+function renderJobDetailCardsLegacy(job) {
   const empty  = document.getElementById('detail-match-empty');
   const el     = document.getElementById('detail-match-results');
   const m      = job.match_result;
@@ -1297,23 +2588,90 @@ function renderJobDetailCards(job) {
       <span class="partial-match-reason">${escHtml(pm.reason || pm.bucket || '')}</span>
     </div>`).join('');
 
-  const profileGaps = m.profile_gaps || [];
+  const profileGaps     = normalizeGaps(m.profile_gaps);
+  const profileGapNames = profileGaps.map(g => g.skill);
+  const evidence        = m.analysis_meta?.evidence || {};
+  const risks           = m.screening_risks || [];
 
   const skillsCard = `<div class="mc">
     <div class="mc-head">${mcIcon(MC_ICONS.layers)} Skills</div>
     <div class="mc-skill-blocks">
       ${skillGroup('Matched', 'sk-green', m.skills_matched, i => chips(i, 'var(--green)'))}
       ${(m.partial_matches || []).length ? `<div class="mc-skill-group">
-        <div class="mc-skill-label sk-amber">Partial — same domain, different tool <span class="mc-skill-count">${m.partial_matches.length}</span></div>
+        <div class="mc-skill-label sk-amber">Partial - adjacent family <span class="mc-skill-count">${m.partial_matches.length}</span></div>
         <div class="partial-matches">${partialHtml}</div>
       </div>` : ''}
-      ${skillGroup('Required — gap', 'sk-red', m.required_gaps, i => chips(i, 'var(--red)'))}
-      ${skillGroup('Preferred — gap', 'sk-dim', m.nice_to_have_gaps, i => chips(i, 'var(--dim)'))}
+      ${skillGroup('Required - gap', 'sk-red', m.required_gaps, i => chips(i, 'var(--red)'))}
+      ${skillGroup('Preferred - gap', 'sk-dim', m.nice_to_have_gaps, i => chips(i, 'var(--dim)'))}
     </div>
-    ${profileGaps.length ? `<div class="mc-nudge">
+    ${profileGapNames.length ? `<div class="mc-nudge">
       <span class="mc-nudge-icon">⚠</span>
-      <div>Based on your experience descriptions, you likely also have <strong>${escHtml(profileGaps.join(', '))}</strong> — but they're not listed in your profile skills. Add them and re-analyze for a more accurate score.</div>
+      <div>Based on your experience descriptions, you likely also have <strong>${escHtml(profileGapNames.join(', '))}</strong> - but they're not listed in your profile skills. Add them and re-analyze for a more accurate score.</div>
     </div>` : ''}
+  </div>`;
+
+  const riskRows = risks.length ? risks.map(r => `
+    <li class="mc-list-item">
+      <div><strong>${escHtml(r.type === 'experience_years' ? 'Experience years' : r.type)}</strong>
+      ${r.severity ? `<span class="mc-rd-label" style="margin-left:8px">${escHtml(r.severity)}</span>` : ''}</div>
+      <div class="mc-prose">${escHtml(r.reason || '')}</div>
+    </li>`).join('') : '';
+
+  const matchedEvidenceRows = (evidence.matched_skills || []).slice(0, 6).map(ev => `
+    <li class="mc-list-item">
+      <div><strong>${escHtml(ev.skill || '')}</strong></div>
+      <div class="mc-prose">${escHtml([ev.source_label, ev.source_name].filter(Boolean).join(' · '))}</div>
+      ${ev.snippet ? `<div class="mc-prose">${escHtml(ev.snippet)}</div>` : ''}
+    </li>`).join('');
+
+  const projectAnchorRows = (evidence.project_anchors || []).slice(0, 3).map(pr => `
+    <li class="mc-list-item">
+      <div><strong>${escHtml(pr.name || '')}</strong></div>
+      <div class="mc-prose">${escHtml([pr.matched_tech || [], pr.matched_tags || []].flat().filter(Boolean).join(', ') || pr.reason || '')}</div>
+      ${pr.evidence ? `<div class="mc-prose">${escHtml(pr.evidence)}</div>` : ''}
+    </li>`).join('');
+
+  const evidenceCard = (riskRows || matchedEvidenceRows || projectAnchorRows) ? `<div class="mc">
+    <div class="mc-head">${mcIcon(MC_ICONS.trending)} Screening risks &amp; evidence</div>
+    ${riskRows ? `<div class="mc-subhead">Screening risks</div><ul class="mc-list">${riskRows}</ul>` : ''}
+    ${matchedEvidenceRows ? `<div class="mc-subhead"${riskRows ? ' style="margin-top:16px"' : ''}>Matched evidence</div><ul class="mc-list">${matchedEvidenceRows}</ul>` : ''}
+    ${projectAnchorRows ? `<div class="mc-subhead"${riskRows || matchedEvidenceRows ? ' style="margin-top:16px"' : ''}>Project anchors</div><ul class="mc-list">${projectAnchorRows}</ul>` : ''}
+  </div>` : '';
+
+  const history = state.analysisHistory[job.id]?.runs || [];
+  const historyLoading = !!state.analysisHistoryLoading[job.id];
+  const historyRows = history.slice(0, 8).map(run => {
+    const delta = run.llm_delta || 0;
+    const deltaCls = delta > 0 ? 'mc-history-delta-up' : delta < 0 ? 'mc-history-delta-down' : 'mc-history-delta-flat';
+    const deltaText = delta > 0 ? `LLM +${delta}` : delta < 0 ? `LLM ${delta}` : 'LLM 0';
+    const when = run.created_at
+      ? new Date(run.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      : '';
+    const trigger = ({
+      save_and_analyze: 'Manual save',
+      scrape_analyze: 'Saved from URL',
+      update_scrape_analyze: 'Updated from URL',
+      reanalyze: 'Re-analyze',
+    })[run.trigger] || run.trigger || 'Run';
+    return `<div class="mc-history-row">
+      <div class="mc-history-main">
+        <div class="mc-history-top">
+          <span class="mc-history-date">${escHtml(when)}</span>
+          <span class="mc-history-trigger">${escHtml(trigger)}</span>
+          <span class="mc-history-score">Det ${escHtml(run.deterministic_score ?? '-')} → Final ${escHtml(run.final_score ?? '-')}</span>
+          <span class="mc-history-delta ${deltaCls}">${escHtml(deltaText)}</span>
+        </div>
+        <div class="mc-history-meta">${escHtml(run.verdict || 'unknown')} · ${escHtml(run.required_gap_count || 0)} required gaps · ${escHtml(run.partial_match_count || 0)} partials · ${escHtml(run.screening_risk_count || 0)} risks</div>
+        ${run.summary_preview ? `<div class="mc-prose">${escHtml(run.summary_preview)}</div>` : ''}
+      </div>
+      <button class="ps-btn-ghost mc-history-open" data-run-id="${escAttr(run.id)}">Preview</button>
+    </div>`;
+  }).join('');
+  const historyCard = `<div class="mc">
+    <div class="mc-head">${mcIcon(MC_ICONS.file)} Analysis history</div>
+    ${historyLoading ? `<div class="mc-prose" style="color:var(--muted)">Loading saved runs…</div>` : ''}
+    ${!historyLoading && historyRows ? `<div class="mc-history-list">${historyRows}</div>` : ''}
+    ${!historyLoading && !historyRows ? `<div class="mc-prose" style="color:var(--muted)">No saved analysis runs yet. The next rerun will be stored here.</div>` : ''}
   </div>`;
 
   // ── Card 3: Experience ──────────────────────────────────────────────────────
@@ -1346,7 +2704,7 @@ function renderJobDetailCards(job) {
     ${hasFocus ? `<div class="mc-subhead"${hasStrengths ? ' style="margin-top:16px"' : ''}>To improve your match</div>${dotList(m.focus_areas, 'var(--accent)')}` : ''}
     ${profileGaps.length ? `<div class="mc-nudge" style="margin-top:14px">
       <span class="mc-nudge-icon">⚠</span>
-      <div>Your profile may be underselling you — the agent found skills implied by your experience that aren't listed. Update your profile and hit Re-analyze to see if your score improves.</div>
+      <div>Your profile may be underselling you - the agent found skills implied by your experience that aren't listed. Update your profile and hit Re-analyze to see if your score improves.</div>
     </div>` : ''}
     ${rdc?.cls === 'rd-stop' ? `<div class="mc-nudge mc-nudge-soft" style="margin-top:14px">
       <span class="mc-nudge-icon">○</span>
@@ -1362,47 +2720,526 @@ function renderJobDetailCards(job) {
 
   empty.classList.add('hidden');
   el.classList.remove('hidden');
-  el.innerHTML = heroCard + skillsCard + expCard + projCard + gapCard + jdCard;
+  el.innerHTML = heroCard + skillsCard + evidenceCard + historyCard + expCard + projCard + gapCard + jdCard;
+}
+
+function renderJobDetailCards(job) {
+  const empty = document.getElementById('detail-match-empty');
+  const el = document.getElementById('detail-match-results');
+  const m = buildAnalysisDisplayResult(job);
+
+  if (!m) { empty.classList.remove('hidden'); el.classList.add('hidden'); return; }
+
+  const score = Math.max(0, Math.min(100, m.match_score || 0));
+  const scoreCol = scoreColorFor(score);
+  const profileGaps = normalizeGaps(m.profile_gaps);
+  const profileGapNames = profileGaps.map(g => g.skill).filter(Boolean);
+  const evidence = m.analysis_meta?.evidence || {};
+  const risks = m.screening_risks || [];
+  const analysisState = m.analysis_state || {};
+  const baselineLists = analysisState.baseline_lists || {};
+  const history = state.analysisHistory[job.id]?.runs || [];
+  const historyLoading = !!state.analysisHistoryLoading[job.id];
+  const liveAiDelta = (job.match_result?.match_score ?? score) - score;
+  const aiDelta = analysisState.enrichment_stale
+    ? (analysisState.latest_history?.llm_delta ?? liveAiDelta)
+    : liveAiDelta;
+  const aiDeltaText = aiDelta > 0 ? `+${aiDelta}` : String(aiDelta);
+  const aiDeltaTone = aiDelta > 0 ? 'up' : aiDelta < 0 ? 'down' : 'flat';
+  const screeningScore = Math.max(0, Math.min(100, score + aiDelta));
+  const openUrl = job.link || job.source_url || job.apply_url || '';
+
+  const RD_CFG = {
+    apply_now: { cls: 'rd-go', label: 'Strong screen' },
+    stretch: { cls: 'rd-stretch', label: 'Stretch screen' },
+    not_yet: { cls: 'rd-stop', label: 'Likely filtered' },
+  };
+  const rd = m.apply_readiness || {};
+  const rdc = RD_CFG[rd.verdict] || null;
+
+  const toggleChip = (skill, tone) => {
+    const ignored = (analysisState.ignored_skills || []).some(item =>
+      normalizeSkillToken(item) === normalizeSkillToken(skill));
+    return `<button type="button"
+      class="analysis-skill-chip ${ignored ? 'is-ignored' : ''}"
+      data-analysis-skill="${escAttr(skill)}"
+      data-tone="${escAttr(tone)}">
+      <span>${escHtml(String(skill))}</span>
+    </button>`;
+  };
+
+  const renderSkillGroup = (label, tone, items, note = '') => {
+    if (!items?.length) return '';
+    return `<div class="analysis-skill-group">
+      <div class="analysis-section-head">
+        <div>${escHtml(label)}</div>
+        <span class="mc-skill-count">${items.length}</span>
+      </div>
+      ${note ? `<div class="analysis-section-note">${escHtml(note)}</div>` : ''}
+      <div class="analysis-skill-grid">${items.map(item => toggleChip(item, tone)).join('')}</div>
+    </div>`;
+  };
+
+  const renderPartialMatches = (items = []) => {
+    if (!items.length) return '';
+    return `<div class="analysis-skill-group">
+      <div class="analysis-section-head">
+        <div>Adjacent skill families</div>
+        <span class="mc-skill-count">${items.length}</span>
+      </div>
+      <div class="analysis-partial-list">${items.map(item => `
+        <div class="analysis-partial-row">
+          ${toggleChip(item.skill || '', 'partial')}
+          <div class="analysis-section-note">${escHtml(item.reason || item.bucket || '')}</div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  };
+
+  const renderListRows = (items = [], emptyText = 'None captured yet.') => {
+    if (!items.length) return `<div class="analysis-section-note">${escHtml(emptyText)}</div>`;
+    return `<ul class="mc-list">${items.map(item => {
+      if (typeof item === 'string') {
+        return `<li><span class="mc-dot" style="background:var(--accent)"></span><div>${escHtml(item)}</div></li>`;
+      }
+      const label = item.skill || item.name || item.type || 'Item';
+      const meta = [
+        item.source_label,
+        item.source_name,
+        Array.isArray(item.evidence) ? item.evidence.join(', ') : '',
+        Array.isArray(item.matched_tech) ? item.matched_tech.join(', ') : '',
+      ].filter(Boolean).join(' | ');
+      const body = item.snippet || item.reason || item.evidence || '';
+      return `<li>
+        <span class="mc-dot" style="background:var(--accent)"></span>
+        <div>
+          <div><strong>${escHtml(label)}</strong></div>
+          ${meta ? `<div class="mc-prose">${escHtml(meta)}</div>` : ''}
+          ${body ? `<div class="mc-prose">${escHtml(body)}</div>` : ''}
+        </div>
+      </li>`;
+    }).join('')}</ul>`;
+  };
+
+  const historyRows = history.slice(0, 10).map(run => {
+    const delta = run.llm_delta || 0;
+    const deltaCls = delta > 0 ? 'analysis-history-delta-up' : delta < 0 ? 'analysis-history-delta-down' : 'analysis-history-delta-flat';
+    const deltaText = delta > 0 ? `AI +${delta}` : delta < 0 ? `AI ${delta}` : 'AI 0';
+    const when = run.created_at
+      ? new Date(run.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      : '';
+    const trigger = ({
+      save_and_analyze: 'Manual save',
+      scrape_analyze: 'Saved from URL',
+      update_scrape_analyze: 'Updated from URL',
+      reanalyze: 'AI rerun',
+    })[run.trigger] || run.trigger || 'Run';
+    return `<details class="analysis-history-item">
+      <summary class="analysis-history-row">
+        <div>
+          <div class="analysis-history-title">${escHtml(when || 'Saved run')}</div>
+          <div class="analysis-history-meta">${escHtml(trigger)} | ${escHtml(run.verdict || 'unknown')}</div>
+        </div>
+        <div class="analysis-history-stats">
+          <span class="analysis-history-score">Det ${escHtml(run.deterministic_score ?? '-')} -> ${escHtml(run.final_score ?? '-')}</span>
+          <span class="${deltaCls}">${escHtml(deltaText)}</span>
+        </div>
+      </summary>
+      <div class="analysis-history-body">
+        <div class="analysis-section-note">${escHtml(run.required_gap_count || 0)} required gaps | ${escHtml(run.partial_match_count || 0)} partials | ${escHtml(run.screening_risk_count || 0)} risks</div>
+        ${run.summary_preview ? `<p class="mc-prose">${escHtml(run.summary_preview)}</p>` : ''}
+        <button type="button" class="ps-btn-ghost mc-history-open" data-run-id="${escAttr(run.id)}">Open saved snapshot</button>
+      </div>
+    </details>`;
+  }).join('');
+
+  const projectsHtml = (m.relevant_projects || []).length ? `<div class="mc-projects">${(m.relevant_projects || []).map(pr => `
+    <div class="mc-proj">
+      <div class="mc-proj-name">${escHtml(pr.name || '')}</div>
+      <div class="mc-proj-reason">${escHtml(pr.reason || '')}</div>
+      ${(pr.talking_points || []).length ? `
+        <div class="mc-tp-label">Resume angle</div>
+        <ul class="mc-tp-list">${pr.talking_points.map(tp => `<li>${escHtml(tp)}</li>`).join('')}</ul>
+      ` : ''}
+    </div>`).join('')}</div>` : `<div class="analysis-section-note">No project anchors were surfaced for this run.</div>`;
+
+  empty.classList.add('hidden');
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <div class="analysis-layout">
+      <div class="analysis-main">
+        <section class="mc mc-hero analysis-hero">
+          <div class="mc-score-row">
+            <div class="mc-ring" style="--c:${scoreCol};--score:${score}"><span class="mc-ring-num">${score}</span></div>
+            <div>
+              <div class="analysis-section-head">
+                <div>Screen score</div>
+                ${rdc ? `<span class="analysis-verdict-chip ${rdc.cls}">${escHtml(rdc.label)}</span>` : ''}
+              </div>
+              <p class="mc-summary">${escHtml(m.summary || rd.reason || 'This view centers the deterministic screen first and keeps the AI narrative as supporting context.')}</p>
+            </div>
+          </div>
+          ${m.application_strategy ? `<div class="mc-strategy"><span class="mc-strategy-arrow">></span>${escHtml(m.application_strategy)}</div>` : ''}
+          <div class="analysis-kpi-strip">
+            <div class="analysis-kpi">
+              <span class="analysis-kpi-label">Screen score</span>
+              <strong>${score}</strong>
+              <span class="analysis-kpi-note">Deterministic ATS-style screen</span>
+            </div>
+            <div class="analysis-kpi">
+              <span class="analysis-kpi-label">AI delta</span>
+              <strong class="analysis-kpi-delta-${aiDeltaTone}">${escHtml(aiDeltaText)}</strong>
+              <span class="analysis-kpi-note">Narrative lift vs screen score</span>
+            </div>
+            <div class="analysis-kpi">
+              <span class="analysis-kpi-label">Required gaps</span>
+              <strong>${(m.required_gaps || []).length}</strong>
+              <span class="analysis-kpi-note">Direct misses still on the JD</span>
+            </div>
+            <div class="analysis-kpi">
+              <span class="analysis-kpi-label">Screening risks</span>
+              <strong>${risks.length}</strong>
+              <span class="analysis-kpi-note">Years / hard-filter concerns</span>
+            </div>
+            <div class="analysis-kpi">
+              <span class="analysis-kpi-label">Excluded items</span>
+              <strong>${analysisState.ignored_count || 0}</strong>
+              <span class="analysis-kpi-note">Ignored from deterministic score</span>
+            </div>
+          </div>
+          <div class="mc-readiness ${rdc?.cls || ''}">
+            <span class="mc-rd-label">Why the screen reads it this way</span>
+            <span class="mc-rd-reason">${escHtml(buildDeterministicReason(m))}</span>
+          </div>
+        </section>
+
+        <section class="mc analysis-section-band">
+          <div class="mc-head">${mcIcon(MC_ICONS.layers)} Required items you want counted</div>
+          <div class="analysis-section-note">Click any badge to exclude it from the deterministic score. Excluded badges stay visible in gray, and you can click them again to turn them back on.</div>
+          ${renderSkillGroup('Direct matches', 'matched', baselineLists.skills_matched || m.skills_matched || [], 'These are already grounded in your profile.')}
+          ${renderPartialMatches(baselineLists.partial_matches || m.partial_matches || [])}
+          ${renderSkillGroup('Required gaps', 'required', baselineLists.required_gaps || m.required_gaps || [], 'Explicit JD asks still missing from your current profile.')}
+          ${renderSkillGroup('Preferred gaps', 'optional', baselineLists.nice_to_have_gaps || m.nice_to_have_gaps || [], 'Useful context, but these should not dominate the screen.')}
+          ${profileGapNames.length ? `<div class="mc-nudge">
+            <span class="mc-nudge-icon">!</span>
+            <div>Your profile likely implies <strong>${escHtml(profileGapNames.join(', '))}</strong>, but those skills are not listed directly yet.</div>
+          </div>` : ''}
+        </section>
+
+        <section class="mc analysis-section-band">
+          <div class="mc-head">${mcIcon(MC_ICONS.trending)} Grounded evidence</div>
+          <div class="analysis-pill-list">
+            <div>
+              <div class="analysis-section-head"><div>Matched evidence</div></div>
+              ${renderListRows((evidence.matched_skills || []).slice(0, 6), 'No direct skill evidence was captured.')}
+            </div>
+            <div>
+              <div class="analysis-section-head"><div>Project anchors</div></div>
+              ${renderListRows((evidence.project_anchors || []).slice(0, 4), 'No strong project anchor was captured.')}
+            </div>
+            <div>
+              <div class="analysis-section-head"><div>Screening risks</div></div>
+              ${renderListRows(risks, 'No explicit screening risk was detected.')}
+            </div>
+          </div>
+        </section>
+
+        ${m.relevant_experience ? `<section class="mc analysis-section-band">
+          <div class="mc-head">${mcIcon(MC_ICONS.briefcase)} Experience fit</div>
+          <p class="mc-prose">${escHtml(m.relevant_experience)}</p>
+        </section>` : ''}
+
+        <section class="mc analysis-section-band">
+          <div class="mc-head">${mcIcon(MC_ICONS.folder)} Relevant projects and resume angles</div>
+          ${projectsHtml}
+        </section>
+
+        <details class="mc mc-jd">
+          <summary class="mc-head mc-jd-summary">${mcIcon(MC_ICONS.file)} Full job description</summary>
+          <div class="mc-jd-content">${renderJD(job.description)}</div>
+        </details>
+      </div>
+
+      <aside class="analysis-rail">
+        <section class="mc analysis-actions-panel">
+          <div class="mc-head">${mcIcon(MC_ICONS.trending)} Analysis controls</div>
+          <button type="button" id="btn-reanalyze-analysis" class="ps-save-btn analysis-primary-btn">Re-enrich with AI</button>
+          ${openUrl ? `<button type="button" id="btn-open-job-browser" class="ps-btn-ghost analysis-secondary-btn" data-open-url="${escAttr(openUrl)}">Open job in browser</button>` : ''}
+          ${(analysisState.ignored_count || 0) ? `<button type="button" id="btn-reset-ignored-skills" class="ps-btn-ghost analysis-secondary-btn">Reset excluded items</button>` : ''}
+          <div class="analysis-rail-note">The screen score is deterministic. Re-enrich only refreshes the AI summary, recommendations, and resume-facing narrative.</div>
+          ${analysisState.enrichment_stale ? `<div class="analysis-stale-note">The deterministic score reflects your current badge selection. AI text may still reflect the previous selection until you re-enrich.</div>` : ''}
+        </section>
+
+        <section class="mc analysis-rail-panel">
+          <div class="mc-head">${mcIcon(MC_ICONS.layers)} Improvement cues</div>
+          <div class="analysis-kpi-strip analysis-kpi-strip-rail">
+            <div class="analysis-kpi">
+              <span class="analysis-kpi-label">Final screen</span>
+              <strong>${screeningScore}</strong>
+              <span class="analysis-kpi-note">If AI framing is accepted as-is</span>
+            </div>
+            <div class="analysis-kpi">
+              <span class="analysis-kpi-label">Hard gaps</span>
+              <strong>${m.analysis_meta?.hard_required_gap_count || 0}</strong>
+              <span class="analysis-kpi-note">Gaps that tend to block screening</span>
+            </div>
+          </div>
+          ${(m.green_flags || []).length ? `
+            <div class="analysis-section-head"><div>Working in your favor</div></div>
+            ${renderListRows(m.green_flags, 'No standout green flags were saved.')}
+          ` : ''}
+          ${(m.focus_areas || []).length ? `
+            <div class="analysis-section-head" style="margin-top:16px"><div>Focus before applying</div></div>
+            ${renderListRows(m.focus_areas, 'No focus areas were saved.')}
+          ` : ''}
+          ${profileGapNames.length ? `<div class="mc-nudge" style="margin-top:14px">
+            <span class="mc-nudge-icon">!</span>
+            <div>Add missing implied skills to your profile only if you can defend them clearly in an interview.</div>
+          </div>` : ''}
+        </section>
+
+        <section class="mc analysis-rail-panel">
+          <div class="mc-head">${mcIcon(MC_ICONS.file)} Analysis history</div>
+          <div class="analysis-rail-note">Each rerun is stored so you can compare how profile edits or badge exclusions changed the screen.</div>
+          ${historyLoading ? `<div class="analysis-section-note">Loading saved runs...</div>` : ''}
+          ${!historyLoading && historyRows ? `<div class="analysis-history-list">${historyRows}</div>` : ''}
+          ${!historyLoading && !historyRows ? `<div class="analysis-section-note">No saved analysis runs yet. Your next rerun will appear here.</div>` : ''}
+        </section>
+      </aside>
+    </div>`;
+}
+
+async function openAnalysisSnapshot(runId) {
+  const job = jobById(state.activeJobId);
+  if (!job || !runId) return;
+  const run = await loadAnalysisSnapshot(job.id, runId);
+  if (!run) { showToast('Could not load that analysis snapshot.'); return; }
+
+  const det = run.deterministic || {};
+  const enr = run.enriched || null;
+  const final = enr || det;
+  const createdAt = run.created_at
+    ? new Date(run.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : '';
+  const trigger = ({
+    save_and_analyze: 'Manual save',
+    scrape_analyze: 'Saved from URL',
+    update_scrape_analyze: 'Updated from URL',
+    reanalyze: 'Re-analyze',
+  })[run.trigger] || run.trigger || 'Run';
+  const llmDelta = enr && det ? (enr.match_score ?? 0) - (det.match_score ?? 0) : 0;
+  const deltaText = llmDelta > 0 ? `+${llmDelta}` : String(llmDelta);
+  const chips = (items, color) => (items || []).length
+    ? `<div class="chips">${items.map(item => `<span class="chip match-chip" style="--chip-color:${color}">${escHtml(String(item))}</span>`).join('')}</div>`
+    : '<span class="match-none">None</span>';
+  const renderGapRows = arr => (arr || []).length
+    ? `<ul class="mc-list">${arr.map(item => {
+      const text = typeof item === 'string' ? item : item.skill || item.type || '';
+      const reason = typeof item === 'string' ? '' : item.reason || '';
+      return `<li><span class="mc-dot" style="background:var(--accent)"></span><div><div>${escHtml(text)}</div>${reason ? `<div class="mc-prose">${escHtml(reason)}</div>` : ''}</div></li>`;
+    }).join('')}</ul>`
+    : '<span class="match-none">None</span>';
+
+  document.getElementById('analysis-history-dialog-body').innerHTML = `
+    <div class="ah-meta-grid">
+      <div class="ah-meta-card"><span class="ah-meta-label">When</span><strong>${escHtml(createdAt)}</strong></div>
+      <div class="ah-meta-card"><span class="ah-meta-label">Trigger</span><strong>${escHtml(trigger)}</strong></div>
+      <div class="ah-meta-card"><span class="ah-meta-label">Deterministic</span><strong>${escHtml(det.match_score ?? '-')}</strong></div>
+      <div class="ah-meta-card"><span class="ah-meta-label">Final</span><strong>${escHtml(final.match_score ?? '-')}</strong></div>
+      <div class="ah-meta-card"><span class="ah-meta-label">LLM delta</span><strong>${escHtml(deltaText)}</strong></div>
+      <div class="ah-meta-card"><span class="ah-meta-label">Verdict</span><strong>${escHtml(final.apply_readiness?.verdict || '-')}</strong></div>
+    </div>
+
+    <div class="ah-section">
+      <div class="mc-head">${mcIcon(MC_ICONS.layers)} Deterministic pass</div>
+      <div class="ah-grid">
+        <div><div class="mc-subhead">Matched</div>${chips(det.skills_matched, 'var(--green)')}</div>
+        <div><div class="mc-subhead">Required gaps</div>${chips(det.required_gaps, 'var(--red)')}</div>
+        <div><div class="mc-subhead">Partial matches</div>${renderGapRows(det.partial_matches)}</div>
+        <div><div class="mc-subhead">Screening risks</div>${renderGapRows(det.screening_risks)}</div>
+      </div>
+      ${det.apply_readiness?.reason ? `<div class="mc-nudge" style="margin-top:14px"><span class="mc-nudge-icon">○</span><div>${escHtml(det.apply_readiness.reason)}</div></div>` : ''}
+    </div>
+
+    <div class="ah-section">
+      <div class="mc-head">${mcIcon(MC_ICONS.trending)} Enriched pass</div>
+      ${enr ? `
+        ${enr.summary ? `<div class="mc-subhead">Summary</div><p class="mc-prose">${escHtml(enr.summary)}</p>` : ''}
+        ${enr.application_strategy ? `<div class="mc-subhead" style="margin-top:14px">Application strategy</div><p class="mc-prose">${escHtml(enr.application_strategy)}</p>` : ''}
+        <div class="ah-grid" style="margin-top:14px">
+          <div><div class="mc-subhead">Green flags</div>${renderGapRows(enr.green_flags)}</div>
+          <div><div class="mc-subhead">Focus areas</div>${renderGapRows(enr.focus_areas)}</div>
+          <div><div class="mc-subhead">Profile gaps</div>${renderGapRows(enr.profile_gaps)}</div>
+          <div><div class="mc-subhead">Relevant experience</div><p class="mc-prose">${escHtml(enr.relevant_experience || 'None saved')}</p></div>
+        </div>
+      ` : `<p class="mc-prose" style="color:var(--muted)">This run only saved the deterministic pass. The LLM enrichment did not complete for it.</p>`}
+    </div>
+  `;
+
+  document.getElementById('analysis-history-dialog').show();
+}
+
+// ── Agent file-write runner ───────────────────────────────────────────────────
+// Agents write JSON to a temp file in workspace/jobs/ rather than outputting
+// raw text - eliminates fragile text parsing and lets OpenCode validate the file.
+async function runAgentToFile(agentId, promptText) {
+  const session  = await oc('/session', { method: 'POST', body: '{}' });
+  const outRel   = `jobs/.tmp-${agentId}-${session.id}.json`;
+  const fullText = `${promptText}\n\nOUTPUT_FILE: workspace/${outRel}`;
+  await oc(`/session/${session.id}/message`, {
+    method: 'POST',
+    body: JSON.stringify({ agent: agentId, parts: [{ type: 'text', text: fullText }] }),
+  });
+  const file = await bridge.workspaceRead(outRel);
+  bridge.workspaceDelete(outRel).catch(() => {});   // fire-and-forget cleanup
+  if (file.error || !file.content) throw new Error(file.error || `Agent ${agentId} did not write output file`);
+  return JSON.parse(file.content);
 }
 
 // ── Match analysis: shared runner + renderer ──────────────────────────────────
-async function runMatchAnalysis(title, company, description) {
-  const p = state.profile || {};
-  const bucketSummary = (p.skill_buckets || [])
-    .filter(b => b.skills?.length)
-    .map(b => `  ${b.category}: ${b.skills.join(', ')}`)
-    .join('\n');
-  const prompt =
-    `PROFILE SKILLS BY BUCKET:\n${bucketSummary || '  (none)'}\n\n` +
-    `FULL PROFILE:\n${JSON.stringify(p, null, 2)}\n\n` +
-    (title || company ? `ROLE: ${[title, company].filter(Boolean).join(' at ')}\n\n` : '') +
-    `JOB DESCRIPTION:\n${description}`;
-  const session = await oc('/session', { method: 'POST', body: '{}' });
-  const msg = await oc(`/session/${session.id}/message`, {
-    method: 'POST',
-    body: JSON.stringify({ agent: 'jd-match', parts: [{ type: 'text', text: prompt }] }),
-  });
-  const reply = (msg?.parts || []).filter(p => p.type === 'text' && p.text).map(p => p.text).join('');
-  return parseAgentJson(reply);
+
+// Inject a small "enriching" status bar into a results container while LLM runs.
+function injectEnrichingShimmer(idPrefix) {
+  const el = document.getElementById(`${idPrefix}-results`);
+  if (!el) return;
+  const d = document.createElement('div');
+  d.className = 'mc-enriching';
+  d.id = `${idPrefix}-enriching-shimmer`;
+  d.innerHTML = '<div class="app-spin" style="width:12px;height:12px;flex-shrink:0"></div> Enriching with AI narrative…';
+  el.prepend(d);
+}
+
+// Remove the shimmer injected above (called before the full Phase 2 re-render).
+function removeEnrichingShimmer(idPrefix) {
+  document.getElementById(`${idPrefix}-enriching-shimmer`)?.remove();
+}
+
+// Legacy single-call path - kept for callers that don't need incremental render.
+// Runs Phase 1 (deterministic) then Phase 2 (LLM enrichment) and returns the merged result.
+async function runMatchAnalysis(job) {
+  const profile = state.profile || {};
+  const partial = computeMatchDeterministic(profile, job);
+  return enrichMatchWithLLM(profile, job, partial);
 }
 
 // ── Resume tab: left actions pane ─────────────────────────────────────────────
+function normalizeGaps(raw) {
+  return (raw || []).map(g => typeof g === 'string' ? { skill: g, reason: '' } : g);
+}
+
+function buildResumeSkillWorkspace(job) {
+  const analysis = buildAnalysisDisplayResult(job) || job?.match_result || {};
+  const chosen = new Set((job?.resume_extra_skills || []).map(normalizeSkillToken).filter(Boolean));
+  const map = new Map();
+
+  const upsert = (item, priority) => {
+    const norm = normalizeSkillToken(item.skill);
+    if (!norm) return;
+    const prev = map.get(norm);
+    if (!prev || priority < prev.priority) {
+      map.set(norm, { ...item, norm, selected: chosen.has(norm), priority });
+    }
+  };
+
+  for (const gap of normalizeGaps(analysis.profile_gaps)) {
+    upsert({
+      skill: gap.skill,
+      reason: truncateText(gap.reason || 'Grounded in your existing experience.', 96),
+      source: 'inferred',
+      tone: 'inferred',
+      allowProfile: true,
+    }, 1);
+  }
+
+  for (const match of (analysis.partial_matches || [])) {
+    upsert({
+      skill: match.skill,
+      reason: truncateText(match.reason || 'Adjacent family match from your existing work.', 96),
+      source: 'adjacent',
+      tone: 'adjacent',
+      allowProfile: true,
+    }, 2);
+  }
+
+  for (const skill of (analysis.required_gaps || [])) {
+    upsert({
+      skill,
+      reason: 'Explicit JD ask. Include only if you can defend it honestly.',
+      source: 'required',
+      tone: 'required',
+      allowProfile: false,
+    }, 3);
+  }
+
+  const all = [...map.values()];
+  const sections = [
+    {
+      key: 'inferred',
+      title: 'Inferred From Experience',
+      note: 'Grounded by your experience or project narrative.',
+      actions: ['select', 'profile'],
+      items: all.filter(item => item.source === 'inferred'),
+    },
+    {
+      key: 'adjacent',
+      title: 'Adjacent Skill Families',
+      note: 'Deterministic family matches surfaced from the analysis.',
+      actions: ['select'],
+      items: all.filter(item => item.source === 'adjacent'),
+    },
+    {
+      key: 'required',
+      title: 'JD Skills You May Still Add',
+      note: 'Resume-only adds when the JD uses a tool name you genuinely know.',
+      actions: ['select'],
+      items: all.filter(item => item.source === 'required'),
+    },
+  ].filter(section => section.items.length);
+
+  return {
+    analysis,
+    sections,
+    all,
+    selectedCount: all.filter(item => item.selected).length,
+    counts: {
+      inferred: all.filter(item => item.source === 'inferred').length,
+      adjacent: all.filter(item => item.source === 'adjacent').length,
+      required: all.filter(item => item.source === 'required').length,
+    },
+  };
+}
+
+function selectedResumeExtraSkills(job) {
+  return [...new Set((job?.resume_extra_skills || []).filter(Boolean))];
+}
+
+function buildResumeSelectionContext(job, extraSkills) {
+  const workspace = buildResumeSkillWorkspace(job);
+  const picked = new Set((extraSkills || []).map(normalizeSkillToken).filter(Boolean));
+  return workspace.all
+    .filter(item => picked.has(item.norm))
+    .map(item => ({ skill: item.skill, source: item.source, reason: item.reason }));
+}
+
 function renderResumeSuggestions(job) {
   const el = document.getElementById('resume-actions-pane');
   if (!el) return;
-  const profileGaps = job.match_result?.profile_gaps || [];
+  const profileGaps = normalizeGaps(job.match_result?.profile_gaps);
   const accepted    = job.resume_extra_skills || [];
   const hasDraft    = !!job.resume_draft;
 
-  const skillRows = profileGaps.map(skill => `
+  const skillRows = profileGaps.map(gap => `
     <div class="ra-skill-row">
-      <span class="ra-skill-name">${escHtml(skill)}</span>
+      <div class="ra-skill-info">
+        <span class="ra-skill-name">${escHtml(gap.skill)}</span>
+        ${gap.reason ? `<span class="ra-skill-reason">${escHtml(gap.reason)}</span>` : ''}
+      </div>
       <div class="ra-skill-btns">
         <label class="rsugg-check" title="Include in next draft">
-          <input type="checkbox" class="rsugg-resume-cb" data-skill="${escAttr(skill)}"${accepted.includes(skill) ? ' checked' : ''}>
+          <input type="checkbox" class="rsugg-resume-cb" data-skill="${escAttr(gap.skill)}"${accepted.includes(gap.skill) ? ' checked' : ''}>
           <span>Draft</span>
         </label>
-        <button class="rsugg-add-profile ps-btn-ghost" data-skill="${escAttr(skill)}">+&nbsp;Profile</button>
+        <button class="rsugg-add-profile ps-btn-ghost" data-skill="${escAttr(gap.skill)}">+&nbsp;Profile</button>
       </div>
     </div>`).join('');
 
@@ -1417,7 +3254,7 @@ function renderResumeSuggestions(job) {
           <button id="btn-include-all-draft" class="ps-btn-ghost ra-agg-btn">Include all in draft</button>
         </div>
       ` : `
-        <p class="ra-hint" style="color:var(--dim)">Profile looks complete for this role — no inferred gaps detected.</p>
+        <p class="ra-hint" style="color:var(--dim)">Profile looks complete for this role - no inferred gaps detected.</p>
       `}
     </div>
 
@@ -1427,8 +3264,9 @@ function renderResumeSuggestions(job) {
       <div class="ra-section-head">${mcIcon(MC_ICONS.file)} Resume</div>
       <div class="ra-actions-stack">
         <button id="btn-compose-resume" class="ps-save-btn ra-generate-btn">
-          ${hasDraft ? 'Re-generate Draft' : 'Generate Resume'}
+          ${hasDraft ? 'Update Draft' : 'Generate Resume'}
         </button>
+        ${hasDraft ? `<button id="btn-recompose-resume" class="ps-btn-ghost ra-reanalyze-btn">Re-generate from scratch</button>` : ''}
         <button id="btn-reanalyze-resume" class="ps-btn-ghost ra-reanalyze-btn">Re-analyze Job</button>
       </div>
       <div id="compose-status" class="gen-status hidden"></div>
@@ -1444,16 +3282,10 @@ async function runResumeComposition(job, extraSkills) {
     `JOB DESCRIPTION:\n${job.description}\n\n` +
     (extraSkills.length ? `EXTRA SKILLS TO INCLUDE IN RESUME:\n${extraSkills.join(', ')}\n\n` : '') +
     `Compose a targeted resume draft for: ${[job.title, job.company].filter(Boolean).join(' at ')}`;
-  const session = await oc('/session', { method: 'POST', body: '{}' });
-  const msg = await oc(`/session/${session.id}/message`, {
-    method: 'POST',
-    body: JSON.stringify({ agent: 'resume-composer', parts: [{ type: 'text', text: prompt }] }),
-  });
-  const reply = (msg?.parts || []).filter(p => p.type === 'text' && p.text).map(p => p.text).join('');
-  return parseAgentJson(reply);
+  return runAgentToFile('resume-composer', prompt);
 }
 
-async function composeResume() {
+async function composeResume(forceRegenerate = false) {
   const job = jobById(state.activeJobId);
   if (!job) return;
   if (!state.profile) { const ok = await loadProfile(); if (!ok) { showToast('Add a profile first.'); return; } }
@@ -1462,14 +3294,28 @@ async function composeResume() {
     .map(cb => cb.dataset.skill).filter(Boolean);
   job.resume_extra_skills = extraSkills;
 
+  // ── Deterministic path: draft exists and no re-generate requested ─────────
+  if (job.resume_draft && !forceRegenerate) {
+    const baseSk  = job.resume_draft._base_skills || [];
+    const merged  = [...new Set([...baseSk, ...extraSkills])];
+    job.resume_draft = { ...job.resume_draft, skills: merged };
+    await persistJobs();
+    renderResumeSuggestions(job);
+    renderResumePreview(job);
+    showToast('Draft updated.');
+    return;
+  }
+
+  // ── LLM path: no draft yet, or explicit re-generate ──────────────────────
   const btn    = document.getElementById('btn-compose-resume');
   const status = document.getElementById('compose-status');
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   status.textContent = 'Composing targeted resume draft…';
   status.classList.remove('hidden');
 
   try {
     const draft = await runResumeComposition(job, extraSkills);
+    draft._base_skills = (draft.skills || []).filter(s => !extraSkills.includes(s));
     job.resume_draft = draft;
     await persistJobs();
     renderResumeSuggestions(job);
@@ -1478,8 +3324,8 @@ async function composeResume() {
     showToast('Resume draft ready.');
   } catch (e) {
     status.textContent = `Failed: ${e.message}`;
-    btn.disabled = false;
-    showToast('Composition failed — try again.');
+    if (btn) btn.disabled = false;
+    showToast('Composition failed - try again.');
   }
 }
 
@@ -1496,21 +3342,227 @@ async function addSkillToProfile(skill, silent = false) {
   bucket.skills.push(skill);
   await bridge.workspaceWrite(PROFILE_PATH, JSON.stringify(p, null, 2));
   if (!silent) showToast(`"${skill}" added to profile.`);
-  const cb = document.querySelector(`.rsugg-resume-cb[data-skill="${skill}"]`);
+  const cb = document.querySelector(`.resume-skill-cb[data-skill="${skill}"]`);
   if (cb) cb.checked = true;
 }
 
 async function addAllSkillsToProfile() {
   const job  = jobById(state.activeJobId);
-  const gaps = job?.match_result?.profile_gaps || [];
+  const gaps = normalizeGaps(job?.match_result?.profile_gaps);
   if (!gaps.length) { showToast('No inferred skills to add.'); return; }
-  for (const skill of gaps) await addSkillToProfile(skill, true);
+  for (const gap of gaps) await addSkillToProfile(gap.skill, true);
   showToast(`Added ${gaps.length} inferred skill${gaps.length !== 1 ? 's' : ''} to profile.`);
 }
 
 function includeAllInDraft() {
   document.querySelectorAll('.rsugg-resume-cb').forEach(cb => { cb.checked = true; });
   showToast('All inferred skills will be included in the next draft.');
+}
+
+function renderResumeSuggestions(job) {
+  const el = document.getElementById('resume-actions-pane');
+  if (!el) return;
+  const workspace = buildResumeSkillWorkspace(job);
+  const counts = workspace.counts;
+  const hasDraft = !!job?.resume_draft;
+
+  const renderSectionActions = section => {
+    const parts = [];
+    if (section.actions.includes('select')) {
+      parts.push(`<button type="button" class="ps-btn-ghost ra-inline-btn" data-resume-bulk="select" data-resume-source="${escAttr(section.key)}">Include all in resume</button>`);
+    }
+    if (section.actions.includes('profile')) {
+      parts.push(`<button type="button" class="ps-btn-ghost ra-inline-btn" data-resume-bulk="profile" data-resume-source="${escAttr(section.key)}">Add all to profile</button>`);
+    }
+    return parts.length ? `<div class="resume-bulk-row">${parts.join('')}</div>` : '';
+  };
+
+  const renderItem = item => `
+    <div class="resume-skill-row ${item.selected ? 'is-selected' : ''}">
+      <div class="resume-skill-main">
+        <span class="resume-skill-badge tone-${escAttr(item.tone)}">${escHtml(item.skill)}</span>
+        <div class="resume-skill-copy">
+          <div class="resume-skill-reason">${escHtml(item.reason)}</div>
+        </div>
+      </div>
+      <div class="resume-skill-controls">
+        <label class="resume-pick" title="Include in next AI draft">
+          <input type="checkbox" class="resume-skill-cb" data-skill="${escAttr(item.skill)}"${item.selected ? ' checked' : ''}>
+          <span>Resume</span>
+        </label>
+        ${item.allowProfile ? `<button type="button" class="rsugg-add-profile ps-btn-ghost" data-skill="${escAttr(item.skill)}">Profile</button>` : ''}
+      </div>
+    </div>`;
+
+  const sectionHtml = workspace.sections.map(section => `
+    <section class="resume-panel">
+      <div class="resume-panel-head">
+        <div>
+          <div class="resume-panel-title">${escHtml(section.title)}</div>
+          <div class="resume-panel-note">${escHtml(section.note)}</div>
+        </div>
+        <span class="resume-panel-count">${section.items.length}</span>
+      </div>
+      ${renderSectionActions(section)}
+      <div class="resume-skill-list">${section.items.map(renderItem).join('')}</div>
+    </section>`).join('');
+
+  el.innerHTML = `
+    <div class="resume-workspace-hero">
+      <div class="ra-section-head">${mcIcon(MC_ICONS.layers)} Resume Composition</div>
+      <div class="resume-hero-copy">Use grounded skill suggestions here to tailor this draft without changing your profile unless you explicitly choose to.</div>
+      <div class="resume-summary-kpis">
+        <div class="resume-kpi"><span class="resume-kpi-label">Selected</span><strong>${workspace.selectedCount}</strong><span class="resume-kpi-note">Extra skills queued for the next draft</span></div>
+        <div class="resume-kpi"><span class="resume-kpi-label">Inferred</span><strong>${counts.inferred}</strong><span class="resume-kpi-note">Backed by experience or projects</span></div>
+        <div class="resume-kpi"><span class="resume-kpi-label">Adjacent</span><strong>${counts.adjacent}</strong><span class="resume-kpi-note">Deterministic family matches</span></div>
+        <div class="resume-kpi"><span class="resume-kpi-label">Required</span><strong>${counts.required}</strong><span class="resume-kpi-note">Manual JD adds for this resume only</span></div>
+      </div>
+    </div>
+
+    ${sectionHtml || `<div class="resume-panel"><div class="resume-panel-note">No extra resume skill candidates were surfaced for this role yet.</div></div>`}
+
+    <section class="resume-panel resume-compose-panel">
+      <div class="resume-panel-head">
+        <div>
+          <div class="resume-panel-title">Draft Actions</div>
+          <div class="resume-panel-note">Use static updates for skill selections, and AI updates only for rewriting summary and bullets.</div>
+        </div>
+      </div>
+      <div class="ra-actions-stack">
+        <button id="btn-compose-resume" class="ps-save-btn ra-generate-btn">
+          ${hasDraft ? 'Compose Resume' : 'Compose Resume'}
+        </button>
+        ${hasDraft ? `<button id="btn-apply-resume-selection" class="ps-btn-ghost ra-reanalyze-btn">Apply Current Selections</button>` : ''}
+        ${hasDraft ? `<button id="btn-refresh-resume-ai" class="ps-btn-ghost ra-reanalyze-btn">Refresh AI Wording</button>` : ''}
+        <button id="btn-clear-resume-skills" class="ps-btn-ghost ra-reanalyze-btn">Clear Selected Extras</button>
+      </div>
+      <div class="resume-action-legend">
+        <div><strong>Compose Resume</strong> builds the full role-targeted draft.</div>
+        ${hasDraft ? `<div><strong>Apply Current Selections</strong> updates only the selected skills in the existing draft.</div>` : ''}
+        ${hasDraft ? `<div><strong>Refresh AI Wording</strong> rewrites summary and bullets from the current draft context.</div>` : ''}
+      </div>
+      <div id="compose-status" class="gen-status hidden"></div>
+    </section>`;
+}
+
+async function runResumeComposition(job, extraSkills, { mode = 'compose' } = {}) {
+  const p = state.profile;
+  const extraSkillContext = buildResumeSelectionContext(job, extraSkills);
+  const reviseExisting = mode === 'refresh_ai';
+  const prompt =
+    `CANDIDATE PROFILE:\n${JSON.stringify(p, null, 2)}\n\n` +
+    `JOB ANALYSIS:\n${JSON.stringify(job.match_result, null, 2)}\n\n` +
+    `JOB DESCRIPTION:\n${job.description}\n\n` +
+    (extraSkills.length ? `EXTRA SKILLS TO INCLUDE IN RESUME:\n${extraSkills.join(', ')}\n\n` : '') +
+    (extraSkillContext.length ? `EXTRA SKILL CONTEXT:\n${JSON.stringify(extraSkillContext, null, 2)}\n\n` : '') +
+    (reviseExisting && job.resume_draft ? `CURRENT RESUME DRAFT:\n${JSON.stringify(job.resume_draft, null, 2)}\n\nRefresh the AI-written wording in this draft. Keep the same overall draft structure unless the supplied evidence makes a stronger wording choice obvious.\n\n` : '') +
+    `Compose a targeted resume draft for: ${[job.title, job.company].filter(Boolean).join(' at ')}`;
+  return runAgentToFile('resume-composer', prompt);
+}
+
+function applyResumeSelectionsToDraft(job) {
+  if (!job?.resume_draft) return false;
+  const extraSkills = selectedResumeExtraSkills(job);
+  const baseSk = job.resume_draft._base_skills || (job.resume_draft.skills || []).filter(s => !extraSkills.includes(s));
+  const merged = [...new Set([...baseSk, ...extraSkills])];
+  job.resume_draft = {
+    ...job.resume_draft,
+    _base_skills: baseSk,
+    skills: merged,
+  };
+  return true;
+}
+
+async function applyResumeSelectionsStatic() {
+  const job = jobById(state.activeJobId);
+  if (!job?.resume_draft) {
+    showToast('Compose a resume first.');
+    return;
+  }
+  job.resume_extra_skills = selectedResumeExtraSkills(job);
+  applyResumeSelectionsToDraft(job);
+  await persistJobs();
+  renderResumeSuggestions(job);
+  renderResumePreview(job);
+  showToast('Applied selected skills to the draft.');
+}
+
+async function composeResume(mode = 'compose') {
+  const job = jobById(state.activeJobId);
+  if (!job) return;
+  if (!state.profile) { const ok = await loadProfile(); if (!ok) { showToast('Add a profile first.'); return; } }
+
+  const extraSkills = selectedResumeExtraSkills(job);
+  job.resume_extra_skills = extraSkills;
+
+  const btn    = document.getElementById('btn-compose-resume');
+  const status = document.getElementById('compose-status');
+  if (btn) btn.disabled = true;
+  if (status) {
+    status.textContent = mode === 'refresh_ai'
+      ? 'Refreshing AI wording...'
+      : 'Composing targeted resume draft...';
+    status.classList.remove('hidden');
+  }
+
+  try {
+    const draft = await runResumeComposition(job, extraSkills, { mode });
+    draft._base_skills = (draft.skills || []).filter(s => !extraSkills.includes(s));
+    job.resume_draft = draft;
+    await persistJobs();
+    renderResumeSuggestions(job);
+    renderResumePreview(job);
+    switchDetailTab('resume');
+    showToast(mode === 'refresh_ai' ? 'AI wording refreshed.' : 'Resume draft ready.');
+  } catch (e) {
+    if (status) status.textContent = `Failed: ${e.message}`;
+    if (btn) btn.disabled = false;
+    showToast('Composition failed - try again.');
+  }
+}
+
+async function addAllSkillsToProfile(source = 'inferred') {
+  const job = jobById(state.activeJobId);
+  const workspace = buildResumeSkillWorkspace(job);
+  const items = workspace.all.filter(item => item.source === source && item.allowProfile);
+  if (!items.length) { showToast('No skills in that group can be added to the profile.'); return; }
+  for (const item of items) await addSkillToProfile(item.skill, true);
+  showToast(`Added ${items.length} skill${items.length !== 1 ? 's' : ''} to profile.`);
+}
+
+async function setResumeSkillSelected(skill, checked) {
+  const job = jobById(state.activeJobId);
+  if (!job || !skill) return;
+  const current = new Map(selectedResumeExtraSkills(job).map(item => [normalizeSkillToken(item), item]));
+  const norm = normalizeSkillToken(skill);
+  if (!norm) return;
+  if (checked) current.set(norm, skill);
+  else current.delete(norm);
+  job.resume_extra_skills = [...current.values()];
+  await persistJobs();
+  renderResumeSuggestions(job);
+}
+
+async function includeAllInDraft(source = 'inferred') {
+  const job = jobById(state.activeJobId);
+  const workspace = buildResumeSkillWorkspace(job);
+  const current = new Map(selectedResumeExtraSkills(job).map(item => [normalizeSkillToken(item), item]));
+  const items = workspace.all.filter(item => item.source === source);
+  if (!items.length) { showToast('No skills in that group to include.'); return; }
+  for (const item of items) current.set(item.norm, item.skill);
+  job.resume_extra_skills = [...current.values()];
+  await persistJobs();
+  renderResumeSuggestions(job);
+  showToast(`${items.length} skill${items.length !== 1 ? 's' : ''} queued for the next draft.`);
+}
+
+async function clearResumeSkillSelections() {
+  const job = jobById(state.activeJobId);
+  if (!job) return;
+  job.resume_extra_skills = [];
+  await persistJobs();
+  renderResumeSuggestions(job);
+  showToast('Cleared selected resume extras.');
 }
 
 // ── Application tab ───────────────────────────────────────────────────────────
@@ -1598,7 +3650,7 @@ function renderApplicationTab(job) {
     ctrlHtml = `
       <div class="app-url-strip">
         <sl-icon library="lucide" name="globe" class="app-url-icon"></sl-icon>
-        <span id="app-current-url" class="app-url-val">—</span>
+        <span id="app-current-url" class="app-url-val">-</span>
       </div>
       <button class="app-ctrl-btn app-ctrl-primary" id="btn-focus-browser">
         <sl-icon library="lucide" name="focus"></sl-icon> Focus
@@ -1705,7 +3757,7 @@ function _handleBrowserDied() {
   state.browser.port  = null;
   state.browser.jobId = null;
   // Clean up Python-side subprocess refs and trigger _restore_window_state()
-  // (idempotent — safe even if the watcher thread already called it).
+  // (idempotent - safe even if the watcher thread already called it).
   bridge.browserClose().catch(() => {});
   loadBrowserProfileStatus().then(() => {
     const job = jobById(state.activeJobId);
@@ -1713,12 +3765,12 @@ function _handleBrowserDied() {
     renderBrowserProfileSettings();
   });
   showToast(wasSetup
-    ? 'Browser account set up — your logins are saved for next time.'
-    : 'Application browser was closed — click "Open Application" to relaunch.');
+    ? 'Browser account set up - your logins are saved for next time.'
+    : 'Application browser was closed - click "Open Application" to relaunch.');
 }
 
 // Called by the bridge watcher thread via evaluate_js the instant the
-// browser subprocess exits — no polling lag.
+// browser subprocess exits - no polling lag.
 window._onBrowserProcessDied = function() { _handleBrowserDied(); };
 
 async function openApplicationBrowser() {
@@ -1752,7 +3804,7 @@ async function focusApplicationBrowser() {
     });
     if (!r.ok) throw new Error(`status ${r.status}`);
   } catch (e) {
-    // Focus failure alone doesn't mean the browser died — the health poll
+    // Focus failure alone doesn't mean the browser died - the health poll
     // handles that. Just surface the error so the user knows to check.
     showToast(`Could not focus browser window: ${e.message}`);
   }
@@ -1810,7 +3862,7 @@ async function confirmGoogleLogin() {
       return;
     }
     if (!result.logged_in) {
-      showToast('No Google account detected — please sign in first, then try again.');
+      showToast('No Google account detected - please sign in first, then try again.');
       if (btn) { btn.disabled = false; btn.innerHTML = '<sl-icon library="lucide" name="check-circle"></sl-icon> Confirm Account'; }
       return;
     }
@@ -1820,8 +3872,8 @@ async function confirmGoogleLogin() {
     await closeApplicationBrowser();
     renderBrowserProfileSettings();
     showToast(result.email
-      ? `Signed in as ${result.email} — click "Open Application" to apply.`
-      : 'Google account confirmed — click "Open Application" to apply.');
+      ? `Signed in as ${result.email} - click "Open Application" to apply.`
+      : 'Google account confirmed - click "Open Application" to apply.');
   } catch (e) {
     showToast(`Verification error: ${e.message}`);
     if (btn) { btn.disabled = false; btn.innerHTML = '<sl-icon library="lucide" name="check-circle"></sl-icon> Confirm Account'; }
@@ -1847,7 +3899,7 @@ async function doResetBrowserProfile() {
     renderBrowserProfileSettings();
     const job = jobById(state.activeJobId);
     if (job) renderApplicationTab(job);
-    showToast('Browser account reset — set it up again to reconnect your logins.');
+    showToast('Browser account reset - set it up again to reconnect your logins.');
   } catch (e) {
     showToast(`Reset error: ${e.message}`);
   }
@@ -1908,7 +3960,7 @@ function renderResumePreview(job) {
   const el = document.getElementById('resume-preview-content');
   if (!el) return;
   if (!job.resume_draft) {
-    el.innerHTML = `<div class="empty" style="padding-top:48px">
+    el.innerHTML = `<div class="empty resume-preview-empty" style="padding-top:48px">
       <sl-icon library="lucide" name="file-text" class="empty-icon"></sl-icon>
       <div class="empty-title">No resume draft yet</div>
       <div class="empty-sub">Click "Generate Resume" in the left panel to preview a tailored resume.</div>
@@ -1919,6 +3971,10 @@ function renderResumePreview(job) {
   const p     = state.profile || {};
   el.innerHTML = `
     <div class="rp-toolbar">
+      <div class="rp-toolbar-copy">
+        <span class="rp-toolbar-label">One-page preview</span>
+        <span class="rp-toolbar-note">Scales with the window while keeping the page readable.</span>
+      </div>
       <button id="btn-export-pdf" class="ps-save-btn rp-export-btn">
         <sl-icon library="lucide" name="download" style="vertical-align:-2px"></sl-icon>
         Export PDF
@@ -1929,9 +3985,9 @@ function renderResumePreview(job) {
 }
 
 // Builds a self-contained print HTML from the resume inner content.
-// Opens in a new window that auto-triggers window.print() — zero pip deps.
+// Opens in a new window that auto-triggers window.print() - zero pip deps.
 // Builds a self-contained HTML document for PDF generation via Playwright.
-// Full modern CSS (flex, custom properties) works — Chromium renders it.
+// Full modern CSS (flex, custom properties) works - Chromium renders it.
 // The inner content mirrors the screen preview exactly.
 function buildExportHTML(draft, p) {
   const inner = renderResumeHTML(draft, p);
@@ -2022,11 +4078,12 @@ function scaleResumePage() {
   page.style.transform = '';
   wrap.style.height    = '';
   wrap.style.width     = '';
-  const availW = viewport.clientWidth - 48;
+  const availW = Math.max(240, viewport.clientWidth - 24);
   const pageW  = 816;
-  const scale  = Math.min(1, availW / pageW);
+  const pageH  = page.offsetHeight;
+  const availH = Math.max(240, viewport.clientHeight - 12);
+  const scale  = Math.min(1, availW / pageW, availH / pageH);
   if (scale < 1) {
-    const pageH = page.offsetHeight;
     page.style.transform       = `scale(${scale})`;
     page.style.transformOrigin = 'top center';
     wrap.style.height          = Math.ceil(pageH * scale) + 'px';
@@ -2038,7 +4095,7 @@ function renderResumeHTML(draft, p) {
   const id      = p.identity || {};
   const contact = p.contact  || {};
 
-  // Contact row: phone | email | links — all facts from profile
+  // Contact row: phone | email | links - all facts from profile
   const contactParts = [
     contact.phone ? escHtml(contact.phone) : null,
     contact.email ? escHtml(contact.email) : null,
@@ -2052,7 +4109,7 @@ function renderResumeHTML(draft, p) {
     ? `<div class="rp-section"><div class="rp-section-title">${escHtml(title)}</div>${body}</div>`
     : '';
 
-  // Bullet list helper — hard cap at 3
+  // Bullet list helper - hard cap at 3
   const bul = (arr) => arr?.length
     ? `<ul class="rp-bullets">${arr.slice(0, 3).map(b => `<li>${escHtml(b)}</li>`).join('')}</ul>`
     : '';
@@ -2081,7 +4138,7 @@ function renderResumeHTML(draft, p) {
     const bullets = (exp.bullets?.length ? exp.bullets : pe.highlights || []).slice(0, 3);
     return `<div class="rp-entry">
       <div class="rp-entry-head">
-        <span class="rp-exp-label"><strong>${escHtml(company)}</strong> — ${escHtml(title)}</span>
+        <span class="rp-exp-label"><strong>${escHtml(company)}</strong> - ${escHtml(title)}</span>
         <span class="rp-entry-dates">${escHtml(dates)}</span>
       </div>
       ${bul(bullets)}
@@ -2142,29 +4199,138 @@ function renderResumeHTML(draft, p) {
   `;
 }
 
-async function reAnalyzeJob() {
+// Re-analyze: Phase 1 (instant rescore) renders immediately, Phase 2 (LLM narrative)
+// fires async in the background - user sees updated score right away.
+async function reAnalyzeJobLegacy() {
   const job = jobById(state.activeJobId);
   if (!job) return;
   if (!state.profile) { const ok = await loadProfile(); if (!ok) { showToast('Profile missing.'); return; } }
   const btn = document.getElementById('btn-reanalyze');
   btn.disabled = true; btn.textContent = 'Analyzing…';
+
   try {
-    const result = await runMatchAnalysis(job.title, job.company, job.description);
     if (job.match_result?.match_score != null) {
       job.score_history = job.score_history || [];
       job.score_history.push({ score: job.match_result.match_score, date: new Date().toISOString() });
     }
-    job.match_score = result.match_score;
-    job.match_result = result;
+
+    // Phase 1 - instant: update score and skill chips
+    const partial = computeMatchDeterministic(state.profile, job);
+    job.match_result = job.match_result
+      ? { ...job.match_result, ...partial,
+          apply_readiness: { verdict: partial.apply_readiness.verdict, reason: job.match_result.apply_readiness?.reason || '' } }
+      : partial;
+    job.match_score = partial.match_score;
+    const analysisRun = await persistAnalysisRun(job, {
+      trigger: 'reanalyze',
+      deterministic: partial,
+    });
     await persistJobs();
     renderJobDetailCards(job);
     renderResumeSuggestions(job);
     renderJobsDashboard();
-    showToast('Re-analysis complete.');
+    btn.disabled = false; btn.textContent = 'Re-analyze';
+
+    // Phase 2 - async: refresh narrative in the background
+    const matchEl = document.getElementById('detail-match-results');
+    if (matchEl && !matchEl.classList.contains('hidden')) injectEnrichingShimmer('detail-match');
+
+    enrichMatchWithLLM(state.profile, job, partial).then(async full => {
+      const live = jobById(job.id);
+      if (!live) return;
+      live.match_score  = full.match_score;
+      live.match_result = full;
+      await persistAnalysisRun(live, {
+        runId: analysisRun?.runId,
+        createdAt: analysisRun?.createdAt,
+        trigger: 'reanalyze',
+        deterministic: partial,
+        enriched: full,
+      });
+      await persistJobs();
+      removeEnrichingShimmer('detail-match');
+      renderJobDetailCards(live);
+      renderResumeSuggestions(live);
+      renderJobsDashboard();
+      showToast('Re-analysis complete.');
+    }).catch(() => {
+      removeEnrichingShimmer('detail-match');
+      showToast('Re-scored - narrative enrichment failed.');
+    });
+
   } catch (e) {
     showToast(`Re-analysis failed: ${e.message}`);
-  } finally {
     btn.disabled = false; btn.textContent = 'Re-analyze';
+  }
+}
+
+async function reAnalyzeJob() {
+  const job = jobById(state.activeJobId);
+  if (!job) return;
+  if (!state.profile) {
+    const ok = await loadProfile();
+    if (!ok) { showToast('Profile missing.'); return; }
+  }
+  const btn = document.getElementById('btn-reanalyze-analysis');
+  if (btn) { btn.disabled = true; btn.textContent = 'Re-enriching...'; }
+
+  try {
+    if (job.match_result?.match_score != null) {
+      job.score_history = job.score_history || [];
+      job.score_history.push({ score: job.match_result.match_score, date: new Date().toISOString() });
+    }
+
+    const partial = computeDisplayedDeterministic(job);
+    job.match_result = job.match_result
+      ? {
+          ...job.match_result,
+          ...partial,
+          apply_readiness: {
+            verdict: partial.apply_readiness.verdict,
+            reason: job.match_result.apply_readiness?.reason || partial.apply_readiness?.reason || '',
+          },
+        }
+      : partial;
+    job.match_score = partial.match_score;
+
+    const analysisRun = await persistAnalysisRun(job, {
+      trigger: 'reanalyze',
+      deterministic: partial,
+    });
+    await persistJobs();
+    renderJobDetailCards(job);
+    renderResumeSuggestions(job);
+    renderJobsDashboard();
+    if (btn) { btn.disabled = false; btn.textContent = 'Re-enrich with AI'; }
+
+    const matchEl = document.getElementById('detail-match-results');
+    if (matchEl && !matchEl.classList.contains('hidden')) injectEnrichingShimmer('detail-match');
+
+    enrichMatchWithLLM(state.profile, job, partial).then(async full => {
+      const live = jobById(job.id);
+      if (!live) return;
+      live.match_result = full;
+      await syncJobDisplayedScore(live, { persist: false });
+      await persistAnalysisRun(live, {
+        runId: analysisRun?.runId,
+        createdAt: analysisRun?.createdAt,
+        trigger: 'reanalyze',
+        deterministic: partial,
+        enriched: full,
+      });
+      await persistJobs();
+      removeEnrichingShimmer('detail-match');
+      renderJobDetailCards(live);
+      renderResumeSuggestions(live);
+      renderJobsDashboard();
+      showToast('Re-analysis complete.');
+    }).catch(() => {
+      removeEnrichingShimmer('detail-match');
+      showToast('Re-scored - narrative enrichment failed.');
+    });
+  } catch (e) {
+    showToast(`Re-analysis failed: ${e.message}`);
+    if (btn) { btn.disabled = false; btn.textContent = 'Re-enrich with AI'; }
   }
 }
 
@@ -2323,7 +4489,7 @@ async function loadProviders() {
 
 function renderConnected() {
   const el = document.getElementById('connected-list');
-  // OpenCode Zen is always connected and needs no key — don't list it as removable.
+  // OpenCode Zen is always connected and needs no key - don't list it as removable.
   const connected = state.providers.connected.filter(id => id !== 'opencode');
   if (!connected.length) {
     el.innerHTML = '<span class="settings-hint">No keyed providers connected yet.</span>';
@@ -2351,12 +4517,12 @@ function populateProviderSelect() {
 
 function populateModelProviderSelect() {
   const sel = document.getElementById('model-provider');
-  // Any connected provider can supply a model — including free OpenCode Zen.
+  // Any connected provider can supply a model - including free OpenCode Zen.
   const usable = state.providers.featured.filter(p => state.providers.connected.includes(p.id));
-  sel.innerHTML = '<sl-option value="">— provider —</sl-option>' +
+  sel.innerHTML = '<sl-option value="">- provider -</sl-option>' +
     usable.map(p => `<sl-option value="${escAttr(p.id)}">${escHtml(p.name)}</sl-option>`).join('');
   const modelSel = document.getElementById('model-select');
-  modelSel.innerHTML = '<sl-option value="">— pick a provider —</sl-option>';
+  modelSel.innerHTML = '<sl-option value="">- pick a provider -</sl-option>';
   modelSel.disabled = true;
   document.getElementById('btn-set-model').disabled = true;
 }
@@ -2365,12 +4531,12 @@ function updateModelSelectForProvider(pid) {
   const modelSel = document.getElementById('model-select');
   const btn = document.getElementById('btn-set-model');
   if (!pid) {
-    modelSel.innerHTML = '<sl-option value="">— pick a provider —</sl-option>';
+    modelSel.innerHTML = '<sl-option value="">- pick a provider -</sl-option>';
     modelSel.disabled = true; btn.disabled = true; return;
   }
   const p = state.providers.featured.find(x => x.id === pid);
   const models = (p && p.models) || [];
-  modelSel.innerHTML = '<sl-option value="">— model —</sl-option>' +
+  modelSel.innerHTML = '<sl-option value="">- model -</sl-option>' +
     models.map(m => `<sl-option value="${escAttr(m.id)}">${escHtml(m.name || m.id)}</sl-option>`).join('');
   modelSel.disabled = false;
   btn.disabled = true;
@@ -2445,20 +4611,30 @@ const setModelStatus = (type, msg) => setStatusText('model-status', type, msg);
 function updateModelBadge() {
   const el = document.getElementById('model-badge-text');
   const cur = document.getElementById('current-model');
-  const label = state.defaultModel ? state.defaultModel.split('/').pop() : '—';
+  const label = state.defaultModel ? state.defaultModel.split('/').pop() : '-';
   if (el) el.textContent = label;
-  if (cur) cur.textContent = state.defaultModel || '—';
+  if (cur) cur.textContent = state.defaultModel || '-';
 }
 
 // ── View switching ───────────────────────────────────────────────────────────
 function switchView(view) {
   if (view !== 'jobs' && state.browser.port) closeApplicationBrowser();
-  document.querySelectorAll('.nav-item').forEach(b =>
-    b.classList.toggle('active', b.dataset.view === view));
   document.querySelectorAll('.view').forEach(v =>
     v.classList.toggle('active', v.id === `view-${view}`));
+  syncChrome(view);
   if (view === 'jobs') {
-    loadJobs().then(() => { renderJobsDashboard(); showJobsSubview('dashboard'); });
+    loadJobs().then(async () => {
+      if (!state.profile) await loadProfile().catch(() => false);
+      if (state.profile) {
+        for (const job of state.jobs) {
+          if ((job.analysis_ignored_skills || []).length && job.match_result) {
+            await syncJobDisplayedScore(job, { persist: false });
+          }
+        }
+      }
+      renderJobsDashboard();
+      showJobsSubview('dashboard');
+    });
   }
   if (view === 'profile') {
     if (state.profile && hasProfileData(state.profile)) renderProfileSections();
@@ -2467,6 +4643,77 @@ function switchView(view) {
 }
 
 // ── Utils ──────────────────────────────────────────────────────────────────────
+function setChromeCopy({ eyebrow, title, subtitle }) {
+  const eyebrowEl = document.getElementById('topbar-eyebrow');
+  const titleEl = document.getElementById('topbar-title');
+  const subtitleEl = document.getElementById('topbar-subtitle');
+  if (eyebrowEl && eyebrow) eyebrowEl.textContent = eyebrow;
+  if (titleEl && title) titleEl.textContent = title;
+  if (subtitleEl && subtitle) subtitleEl.textContent = subtitle;
+}
+
+function syncChrome(view, detail = {}) {
+  document.querySelectorAll('.nav-item[data-view]').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === view));
+  document.querySelectorAll('.top-nav-item').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === view));
+
+  if (view === 'profile') {
+    if (detail.section === 'ingest') {
+      setChromeCopy({
+        eyebrow: 'Profile / Ingest',
+        title: 'Add to Profile',
+        subtitle: 'Upload or paste new material and merge it into your professional source of truth.',
+      });
+      return;
+    }
+    setChromeCopy({
+      eyebrow: 'Career workspace',
+      title: 'Profile',
+      subtitle: 'Shape the profile that powers matching, resume tailoring, and application automation.',
+    });
+    return;
+  }
+
+  if (view === 'jobs') {
+    if (detail.section === 'add') {
+      setChromeCopy({
+        eyebrow: 'Jobs / Intake',
+        title: 'Add a Job',
+        subtitle: 'Capture the posting, enrich it, and turn it into an actionable opportunity.',
+      });
+      return;
+    }
+    if (detail.section === 'detail') {
+      const job = detail.job || jobById(state.activeJobId) || {};
+      const tab = detail.tab || 'analysis';
+      const subtitles = {
+        analysis: 'Audit the match, inspect evidence, and decide whether this role is worth pursuing.',
+        resume: 'Compose a targeted, one-page draft using deterministic structure and selective AI wording.',
+        application: 'Open the application workspace, verify fields, and keep the submission flow lightweight.',
+      };
+      setChromeCopy({
+        eyebrow: `Jobs / ${tab.charAt(0).toUpperCase() + tab.slice(1)}`,
+        title: job.title || 'Untitled Role',
+        subtitle: [job.company, subtitles[tab]].filter(Boolean).join(' - '),
+      });
+      return;
+    }
+    setChromeCopy({
+      eyebrow: 'Jobs / Dashboard',
+      title: 'Job Pipeline',
+      subtitle: 'Track saved opportunities, compare fit, and move quickly from analysis to action.',
+    });
+    return;
+  }
+
+  setChromeCopy({
+    eyebrow: 'Insights',
+    title: 'Saved Matches',
+    subtitle: 'A future workspace for trends, comparisons, and historical analysis snapshots.',
+  });
+}
+
 function escHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -2495,7 +4742,7 @@ function wire() {
     dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
   dz.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
 
-  // Profile tab — ingest
+  // Profile tab - ingest
   document.getElementById('btn-add-info').addEventListener('click', () => showProfileSubview('ingest'));
   document.getElementById('btn-back-from-ingest').addEventListener('click', () => showProfileSubview('main'));
   document.getElementById('paste-text').addEventListener('input', updateGenerateEnabled);
@@ -2505,7 +4752,7 @@ function wire() {
     if (del) { await bridge.workspaceDelete(del.dataset.path); await refreshDocs(); }
   });
 
-  // Profile tab — section edit/save/cancel (event delegation)
+  // Profile tab - section edit/save/cancel (event delegation)
   const ps = document.getElementById('profile-sections');
   ps.addEventListener('click', e => {
     if (e.target.closest('.ps-edit-btn'))   { editSection(e.target.closest('[data-section]').dataset.section); return; }
@@ -2560,6 +4807,12 @@ function wire() {
   const EXPANDED_SVG  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg>`;
   function setSidebarCollapsed(on) {
     sidebar.classList.toggle('collapsed', on);
+    if (on) {
+      document.documentElement.style.setProperty('--sidebar-w', '72px');
+    } else {
+      const restored = parseInt(localStorage.getItem('sidebar-w') || '252', 10);
+      document.documentElement.style.setProperty('--sidebar-w', `${Math.max(220, restored)}px`);
+    }
     collapseBtn.innerHTML = on ? COLLAPSED_SVG : EXPANDED_SVG;
     collapseBtn.title = on ? 'Expand sidebar' : 'Collapse sidebar';
     localStorage.setItem('sidebar-collapsed', on ? '1' : '');
@@ -2597,8 +4850,12 @@ function wire() {
     const item = e.target.closest('.nav-item');
     if (item && !item.disabled && item.dataset.view) switchView(item.dataset.view);
   });
+  document.querySelector('.top-nav')?.addEventListener('click', e => {
+    const item = e.target.closest('.top-nav-item');
+    if (item && !item.disabled && item.dataset.view) switchView(item.dataset.view);
+  });
 
-  // Jobs tab — dashboard
+  // Jobs tab - dashboard
   document.getElementById('btn-add-job').addEventListener('click', openAddJobView);
   document.getElementById('btn-back-from-add').addEventListener('click', () => {
     renderJobsDashboard(); showJobsSubview('dashboard');
@@ -2631,7 +4888,6 @@ function wire() {
     badge.textContent = STATUS_LABELS[e.target.value] || e.target.value;
     badge.style.setProperty('--status-color', statCol);
   });
-  document.getElementById('btn-reanalyze').addEventListener('click', reAnalyzeJob);
   document.getElementById('btn-delete-job').addEventListener('click', () => {
     if (state.activeJobId) openDeleteJobDialog(state.activeJobId);
   });
@@ -2639,15 +4895,20 @@ function wire() {
     () => document.getElementById('delete-job-dialog').hide());
   document.getElementById('btn-delete-job-confirm').addEventListener('click', doDeleteJob);
 
-  // Job detail — tab strip + all dynamically rendered buttons
+  // Job detail - tab strip + all dynamically rendered buttons
   document.getElementById('jobs-detail').addEventListener('click', e => {
     const tab = e.target.closest('.detail-tab');
     if (tab?.dataset.tab) { switchDetailTab(tab.dataset.tab); return; }
     const tabLink = e.target.closest('.detail-tab-link');
     if (tabLink?.dataset.tab) { switchDetailTab(tabLink.dataset.tab); return; }
 
-    if (e.target.closest('#btn-compose-resume'))     { composeResume(); return; }
-    if (e.target.closest('#btn-reanalyze-resume'))   { reAnalyzeJob(); return; }
+    if (e.target.closest('#btn-compose-resume'))     { composeResume('compose'); return; }
+    if (e.target.closest('#btn-apply-resume-selection')) { applyResumeSelectionsStatic(); return; }
+    if (e.target.closest('#btn-refresh-resume-ai'))  { composeResume('refresh_ai'); return; }
+    if (e.target.closest('#btn-recompose-resume'))   { composeResume('compose'); return; }
+    if (e.target.closest('#btn-clear-resume-skills')) { clearResumeSkillSelections(); return; }
+    if (e.target.closest('#btn-reanalyze-analysis')) { reAnalyzeJob(); return; }
+    if (e.target.closest('#btn-reset-ignored-skills')) { resetIgnoredAnalysisSkills(); return; }
     if (e.target.closest('#btn-export-pdf'))          { exportResumePDF(); return; }
     if (e.target.closest('#btn-export-pdf-app'))      { exportResumePDF(); return; }
     if (e.target.closest('#btn-add-all-profile'))     { addAllSkillsToProfile(); return; }
@@ -2659,19 +4920,42 @@ function wire() {
     if (e.target.closest('#btn-setup-profile-inline'))  { setupBrowserProfile(); return; }
     if (e.target.closest('#btn-confirm-google-login'))  { confirmGoogleLogin(); return; }
     if (e.target.closest('#btn-cancel-setup'))          { closeApplicationBrowser(); return; }
+    const skillToggle = e.target.closest('[data-analysis-skill]');
+    if (skillToggle?.dataset.analysisSkill) { toggleIgnoredAnalysisSkill(skillToggle.dataset.analysisSkill); return; }
+    const openJobBtn = e.target.closest('#btn-open-job-browser');
+    if (openJobBtn?.dataset.openUrl) {
+      bridge.openExternal(openJobBtn.dataset.openUrl)
+        .then(result => { if (!result?.ok) showToast(result?.error || 'Could not open browser.'); })
+        .catch(err => showToast(`Could not open browser: ${err.message}`));
+      return;
+    }
+    const historyBtn = e.target.closest('.mc-history-open');
+    if (historyBtn?.dataset.runId) { openAnalysisSnapshot(historyBtn.dataset.runId); return; }
 
     const apBtn = e.target.closest('.rsugg-add-profile');
     if (apBtn?.dataset.skill) { addSkillToProfile(apBtn.dataset.skill); return; }
+    const bulkBtn = e.target.closest('[data-resume-bulk]');
+    if (bulkBtn?.dataset.resumeBulk) {
+      const source = bulkBtn.dataset.resumeSource || 'inferred';
+      if (bulkBtn.dataset.resumeBulk === 'profile') { addAllSkillsToProfile(source); return; }
+      if (bulkBtn.dataset.resumeBulk === 'select')  { includeAllInDraft(source); return; }
+    }
+  });
+  document.getElementById('jobs-detail').addEventListener('change', e => {
+    const resumeCb = e.target.closest('.resume-skill-cb');
+    if (resumeCb?.dataset.skill) {
+      setResumeSkillSelected(resumeCb.dataset.skill, !!resumeCb.checked);
+    }
   });
 
-  // Jobs tab — add job form
+  // Jobs tab - add job form
   document.getElementById('add-job-desc').addEventListener('input', () => {
     document.getElementById('btn-save-job').disabled =
       document.getElementById('add-job-desc').value.trim().length < 10;
   });
   document.getElementById('btn-save-job').addEventListener('click', saveAndAnalyzeJob);
 
-  // Jobs tab — paste-to-analyze (Ctrl/Cmd+V on the dashboard)
+  // Jobs tab - paste-to-analyze (Ctrl/Cmd+V on the dashboard)
   document.addEventListener('paste', onGlobalPaste);
   document.getElementById('btn-paste-cancel').addEventListener('click', () => {
     document.getElementById('paste-job-dialog').hide();
@@ -2690,12 +4974,15 @@ function wire() {
 
   // Settings
   document.getElementById('btn-settings').addEventListener('click', openSettings);
+  document.getElementById('btn-topbar-settings')?.addEventListener('click', openSettings);
   document.getElementById('auto-analyze-toggle').addEventListener('sl-change', e => {
     state.autoAnalyzePaste = e.target.checked;
     localStorage.setItem('auto-analyze-paste', e.target.checked ? '1' : '');
   });
   document.getElementById('btn-settings-close').addEventListener('click',
     () => document.getElementById('settings-dialog').hide());
+  document.getElementById('btn-close-analysis-history').addEventListener('click',
+    () => document.getElementById('analysis-history-dialog').hide());
   document.getElementById('btn-save-key').addEventListener('click', saveKey);
   document.getElementById('btn-set-model').addEventListener('click', setModel);
   document.getElementById('connected-list').addEventListener('click', e => {
@@ -2707,7 +4994,7 @@ function wire() {
   document.getElementById('model-select').addEventListener('sl-change', e =>
     document.getElementById('btn-set-model').disabled = !e.target.value);
 
-  // Settings dialog — browser profile section (delegated: content is dynamically rendered)
+  // Settings dialog - browser profile section (delegated: content is dynamically rendered)
   document.getElementById('settings-dialog').addEventListener('click', e => {
     if (e.target.closest('#btn-setup-browser-profile')) {
       document.getElementById('settings-dialog').hide();
@@ -2752,9 +5039,9 @@ async function init() {
     state.config = config;
     state.port = config.opencode_port;
     state.defaultModel = config.default_model || '';
-    document.title = config.app_title || 'Job Search OS';
-    const brand = document.querySelector('.brand span');
-    if (brand) brand.textContent = config.app_title || 'Job Search OS';
+    document.title = config.app_title || 'CareerForge';
+    const brand = document.querySelector('.brand-text');
+    if (brand) brand.textContent = config.app_title || 'CareerForge';
     updateModelBadge();
   } catch (e) {
     showToast('Failed to connect to backend');
@@ -2768,3 +5055,4 @@ async function init() {
 }
 
 init();
+

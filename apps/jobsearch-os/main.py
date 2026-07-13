@@ -1,5 +1,5 @@
 """
-Job Search OS — an AgentOS application.
+CareerForge - an AgentOS application.
 
 V0 scope: a Profile ("About Me") workspace. Upload / paste candidate documents,
 extract a structured profile via the `profile` agent, render and edit it.
@@ -19,7 +19,7 @@ from agentos import run, AppConfig, WorkspaceFolder
 
 APP = AppConfig(
     app_id="jobsearch-os",
-    app_title="Job Search OS",
+    app_title="CareerForge",
     app_root=Path(__file__).resolve().parent,
     ui_dir="ui",                      # this app ships its own front-end
     workspace_dirname="workspace",

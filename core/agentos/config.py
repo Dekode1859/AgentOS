@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,7 @@ class AppConfig:
     # it unset (the default) keeps the shared chat UI — so existing apps are
     # unaffected and the swap invariant holds.
     ui_dir: Path | None = None
+    bridge_cls: type[Any] | None = None
 
     workspace_dirname: str = "workspace"          # data root dir name under app_root
     workspace_folders: tuple[WorkspaceFolder, ...] = ()  # taxonomy (app-defined)

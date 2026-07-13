@@ -1,32 +1,36 @@
-# Learning OS
+# Lexicon.ai
 
-An AgentOS application for LLM-driven personal learning. It is the **reference
-implementation** that AgentOS Core was extracted from.
+Lexicon.ai is an AgentOS application for building a personal knowledge base in
+three layers:
 
-Learning OS owns only domain concerns:
+- `raw/` stores immutable source artifacts
+- `processed/` stores deterministic markdown conversions of those sources
+- `wiki/` is the LLM-maintained knowledge graph (pages, weekly folders, backlinks)
 
-- **Agents** (`opencode.json`): `curriculum`, `session-planner`, `recap`
-- **Workspace taxonomy** (`main.py` → `workspace_folders`): `raw`, `processed`,
-  `knowledge`, `curriculum`, `sessions`
-- **Workspace data** (`workspace/`): the markdown vault
-- **Branding**: title "Learning OS"
+The app ships its own UI (Dashboard, Library, Wiki, Graph) and its own bridge
+extension, but it runs on the same AgentOS Core as the other apps in this
+repository.
 
-Everything else — the window, OpenCode runtime, chat UI, streaming, sessions,
-storage primitives, providers — comes from [AgentOS Core](../../core/).
+## Supported source formats
+
+- PDF
+- EPUB
+- DOCX
+- TXT
+- Markdown
+- HTML
+- JSON
+- CSV / TSV
+- direct web URLs
 
 ## Run
 
 ```bash
-make install      # uv sync
-make auth-setup   # add a provider credential (isolated to .opencode-home/)
-make run          # uv run python main.py
+make install
+make run
 ```
 
-Requires the `opencode` CLI on your PATH:
-`curl -fsSL https://opencode.ai/install | bash`
-
-## How it consumes Core
-
-`main.py` adds the sibling `core/` to `sys.path`, constructs an `AppConfig`, and
-calls `agentos.run(APP)`. That single object is the entire Core↔App seam — no
-Core file references Learning OS.
+The ingest pipeline is deterministic and app-local. Raw files are never
+rewritten. Processed markdown is regenerated from the raw layer whenever you
+reprocess a source. The wiki index (links, backlinks, and the graph edge list)
+is computed on demand from the markdown in `wiki/`.

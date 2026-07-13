@@ -1,4 +1,4 @@
-# Job Search OS
+# CareerForge
 
 An AgentOS application. It consumes the **same unmodified Core** as Learning OS,
 proving the swapability boundary — but ships its **own UI** (an About Me

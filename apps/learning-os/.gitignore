@@ -8,3 +8,10 @@ dist/
 
 # App-local OpenCode home (contains credentials and session data)
 .opencode-home/
+
+workspace/processed/*
+!workspace/processed/.gitkeep
+workspace/raw/*
+!workspace/raw/.gitkeep
+workspace/wiki/*
+!workspace/wiki/.gitkeep

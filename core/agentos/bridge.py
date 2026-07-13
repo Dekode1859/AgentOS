@@ -118,7 +118,28 @@ class Bridge:
             return result[0] if isinstance(result, (list, tuple)) else result
         return ""
 
+    def open_file_dialog(self) -> list[str]:
+        result = webview.windows[0].create_file_dialog(
+            webview.OPEN_DIALOG,
+            allow_multiple=True,
+        )
+        if not result:
+            return []
+        return list(result) if isinstance(result, (list, tuple)) else [result]
+
     # ── Application browser ───────────────────────────────────────────────────
+    def open_external(self, url: str) -> dict:
+        target = str(url or "").strip()
+        if not target:
+            return {"ok": False, "error": "No URL provided"}
+        try:
+            import webbrowser
+
+            webbrowser.open(target, new=2)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def browser_open(self, url: str) -> dict:
         """Launch a headed Playwright Chromium browser at the given URL.
         Saves the current app window state, tiles both windows side-by-side,

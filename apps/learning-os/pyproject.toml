@@ -1,10 +1,15 @@
 [project]
-name = "learning-os"
+name = "lexicon"
 version = "0.1.0"
-description = "Learning OS — an AgentOS application for LLM-driven personal learning"
+description = "Lexicon.ai - an AgentOS application for deterministic source processing and wiki-first knowledge work"
 requires-python = ">=3.11"
 dependencies = [
+    "beautifulsoup4>=4.12.0",
+    "ebooklib>=0.18",
+    "markdownify>=0.13.0",
+    "pypdf>=5.0.0",
     "pywebview>=4.4.0",
+    "python-docx>=1.1.0",
     "requests>=2.31.0",
 ]
 
