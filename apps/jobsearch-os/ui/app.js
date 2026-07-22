@@ -800,7 +800,7 @@ function computeMatchDeterministic(profile, job) {
         estimated_years: Number(formatYears(estimatedYears)),
         gap_years: Number(formatYears(gap)),
         penalty,
-        reason: `JD asks for ${formatYears(yearsReq.min_years)}+ years; profile estimates about ${formatYears(estimatedYears)} years.`,
+        reason: `The job asks for ${formatYears(yearsReq.min_years)}+ years of experience; your profile shows about ${formatYears(estimatedYears)}.`,
       });
     }
   }
@@ -872,7 +872,7 @@ function computeMatchDeterministic(profile, job) {
     apply_readiness: {
       verdict: computeVerdictStrict(match_score, required_gaps, screening_risks, hardRequiredGaps.length),
       reason: hardRequiredGaps.length
-        ? `Explicit JD requirements are still missing: ${hardRequiredGaps.slice(0, 3).join(', ')}.`
+        ? `Still missing required skills: ${hardRequiredGaps.slice(0, 3).join(', ')}.`
         : screening_risks.length
         ? riskText
         : (required_gaps.length
@@ -1166,10 +1166,16 @@ async function extractAndMerge() {
 }
 
 function setGenerating(on) {
-  document.getElementById('btn-generate').loading = on;
+  const btn = document.getElementById('btn-generate');
+  btn.loading = on;
+  btn.disabled = on || btn.disabled;
+  if (!on) updateGenerateEnabled();
+  // Freeze the inputs so nothing changes mid-extraction.
+  document.getElementById('paste-text').disabled = on;
+  document.getElementById('file-input').disabled = on;
   const s = document.getElementById('gen-status');
   s.classList.toggle('hidden', !on);
-  if (on) s.textContent = 'Extracting and merging into your profile…';
+  if (on) s.textContent = 'Reading your documents and updating the profile… this can take a minute.';
 }
 
 // ── Profile: section rendering ────────────────────────────────────────────────
@@ -1843,7 +1849,7 @@ function buildDeterministicReason(result) {
   const screeningRisks = result?.screening_risks || [];
   const requiredGaps = result?.required_gaps || [];
   if (hardRequiredGaps.length) {
-    return `Explicit JD requirements are still missing: ${hardRequiredGaps.slice(0, 3).join(', ')}.`;
+    return `Still missing required skills: ${hardRequiredGaps.slice(0, 3).join(', ')}.`;
   }
   if (screeningRisks.length) {
     return screeningRisks.map(r => r.reason).join(' ');
@@ -2109,8 +2115,20 @@ function openDeleteJobDialog(id) {
 async function doDeleteJob() {
   const id = _pendingDeleteId;
   _pendingDeleteId = null;
-  document.getElementById('delete-job-dialog').hide();
   if (!id) return;
+  const confirmBtn = document.getElementById('btn-delete-job-confirm');
+  confirmBtn.loading = true; confirmBtn.disabled = true;
+  document.getElementById('btn-delete-job-cancel').disabled = true;
+  try {
+    await doDeleteJobInner(id);
+  } finally {
+    confirmBtn.loading = false; confirmBtn.disabled = false;
+    document.getElementById('btn-delete-job-cancel').disabled = false;
+    document.getElementById('delete-job-dialog').hide();
+  }
+}
+
+async function doDeleteJobInner(id) {
   const job = jobById(id);
   await deleteAnalysisHistory(id);
   state.jobs = state.jobs.filter(j => j.id !== id);
@@ -2643,7 +2661,7 @@ function renderJobDetailCardsLegacy(job) {
   const historyRows = history.slice(0, 8).map(run => {
     const delta = run.llm_delta || 0;
     const deltaCls = delta > 0 ? 'mc-history-delta-up' : delta < 0 ? 'mc-history-delta-down' : 'mc-history-delta-flat';
-    const deltaText = delta > 0 ? `LLM +${delta}` : delta < 0 ? `LLM ${delta}` : 'LLM 0';
+    const deltaText = delta > 0 ? `AI +${delta}` : delta < 0 ? `AI ${delta}` : 'AI ±0';
     const when = run.created_at
       ? new Date(run.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
       : '';
@@ -2651,17 +2669,20 @@ function renderJobDetailCardsLegacy(job) {
       save_and_analyze: 'Manual save',
       scrape_analyze: 'Saved from URL',
       update_scrape_analyze: 'Updated from URL',
-      reanalyze: 'Re-analyze',
+      reanalyze: 'Refreshed',
     })[run.trigger] || run.trigger || 'Run';
+    const verdictLabel = ({
+      apply_now: 'Strong match', stretch: 'A stretch', not_yet: 'Likely filtered',
+    })[run.verdict] || '';
     return `<div class="mc-history-row">
       <div class="mc-history-main">
         <div class="mc-history-top">
           <span class="mc-history-date">${escHtml(when)}</span>
           <span class="mc-history-trigger">${escHtml(trigger)}</span>
-          <span class="mc-history-score">Det ${escHtml(run.deterministic_score ?? '-')} → Final ${escHtml(run.final_score ?? '-')}</span>
+          <span class="mc-history-score">Score ${escHtml(run.deterministic_score ?? '-')} → ${escHtml(run.final_score ?? '-')}</span>
           <span class="mc-history-delta ${deltaCls}">${escHtml(deltaText)}</span>
         </div>
-        <div class="mc-history-meta">${escHtml(run.verdict || 'unknown')} · ${escHtml(run.required_gap_count || 0)} required gaps · ${escHtml(run.partial_match_count || 0)} partials · ${escHtml(run.screening_risk_count || 0)} risks</div>
+        <div class="mc-history-meta">${verdictLabel ? `${escHtml(verdictLabel)} · ` : ''}${escHtml(run.required_gap_count || 0)} missing requirements · ${escHtml(run.screening_risk_count || 0)} risks</div>
         ${run.summary_preview ? `<div class="mc-prose">${escHtml(run.summary_preview)}</div>` : ''}
       </div>
       <button class="ps-btn-ghost mc-history-open" data-run-id="${escAttr(run.id)}">Preview</button>
@@ -2671,7 +2692,7 @@ function renderJobDetailCardsLegacy(job) {
     <div class="mc-head">${mcIcon(MC_ICONS.file)} Analysis history</div>
     ${historyLoading ? `<div class="mc-prose" style="color:var(--muted)">Loading saved runs…</div>` : ''}
     ${!historyLoading && historyRows ? `<div class="mc-history-list">${historyRows}</div>` : ''}
-    ${!historyLoading && !historyRows ? `<div class="mc-prose" style="color:var(--muted)">No saved analysis runs yet. The next rerun will be stored here.</div>` : ''}
+    ${!historyLoading && !historyRows ? `<div class="mc-prose" style="color:var(--muted)">Past analysis runs will appear here.</div>` : ''}
   </div>`;
 
   // ── Card 3: Experience ──────────────────────────────────────────────────────
@@ -2784,7 +2805,7 @@ function renderJobDetailCards(job) {
     if (!items.length) return '';
     return `<div class="analysis-skill-group">
       <div class="analysis-section-head">
-        <div>Adjacent skill families</div>
+        <div>Related to your skills</div>
         <span class="mc-skill-count">${items.length}</span>
       </div>
       <div class="analysis-partial-list">${items.map(item => `
@@ -2834,19 +2855,22 @@ function renderJobDetailCards(job) {
       update_scrape_analyze: 'Updated from URL',
       reanalyze: 'AI rerun',
     })[run.trigger] || run.trigger || 'Run';
+    const verdictLabel = ({
+      apply_now: 'Strong match', stretch: 'A stretch', not_yet: 'Likely filtered',
+    })[run.verdict] || '';
     return `<details class="analysis-history-item">
       <summary class="analysis-history-row">
         <div>
           <div class="analysis-history-title">${escHtml(when || 'Saved run')}</div>
-          <div class="analysis-history-meta">${escHtml(trigger)} | ${escHtml(run.verdict || 'unknown')}</div>
+          <div class="analysis-history-meta">${escHtml(trigger)}${verdictLabel ? ` | ${escHtml(verdictLabel)}` : ''}</div>
         </div>
         <div class="analysis-history-stats">
-          <span class="analysis-history-score">Det ${escHtml(run.deterministic_score ?? '-')} -> ${escHtml(run.final_score ?? '-')}</span>
+          <span class="analysis-history-score">Score ${escHtml(run.deterministic_score ?? '-')} → ${escHtml(run.final_score ?? '-')}</span>
           <span class="${deltaCls}">${escHtml(deltaText)}</span>
         </div>
       </summary>
       <div class="analysis-history-body">
-        <div class="analysis-section-note">${escHtml(run.required_gap_count || 0)} required gaps | ${escHtml(run.partial_match_count || 0)} partials | ${escHtml(run.screening_risk_count || 0)} risks</div>
+        <div class="analysis-section-note">${escHtml(run.required_gap_count || 0)} missing requirements | ${escHtml(run.screening_risk_count || 0)} risks</div>
         ${run.summary_preview ? `<p class="mc-prose">${escHtml(run.summary_preview)}</p>` : ''}
         <button type="button" class="ps-btn-ghost mc-history-open" data-run-id="${escAttr(run.id)}">Open saved snapshot</button>
       </div>
@@ -2861,7 +2885,7 @@ function renderJobDetailCards(job) {
         <div class="mc-tp-label">Resume angle</div>
         <ul class="mc-tp-list">${pr.talking_points.map(tp => `<li>${escHtml(tp)}</li>`).join('')}</ul>
       ` : ''}
-    </div>`).join('')}</div>` : `<div class="analysis-section-note">No project anchors were surfaced for this run.</div>`;
+    </div>`).join('')}</div>` : `<div class="analysis-section-note">No projects highlighted for this run.</div>`;
 
   empty.classList.add('hidden');
   el.classList.remove('hidden');
@@ -2876,50 +2900,41 @@ function renderJobDetailCards(job) {
                 <div>Screen score</div>
                 ${rdc ? `<span class="analysis-verdict-chip ${rdc.cls}">${escHtml(rdc.label)}</span>` : ''}
               </div>
-              <p class="mc-summary">${escHtml(m.summary || rd.reason || 'This view centers the deterministic screen first and keeps the AI narrative as supporting context.')}</p>
+              <p class="mc-summary">${escHtml(m.summary || rd.reason || '')}</p>
             </div>
           </div>
           ${m.application_strategy ? `<div class="mc-strategy"><span class="mc-strategy-arrow">></span>${escHtml(m.application_strategy)}</div>` : ''}
           <div class="analysis-kpi-strip">
-            <div class="analysis-kpi">
-              <span class="analysis-kpi-label">Screen score</span>
-              <strong>${score}</strong>
-              <span class="analysis-kpi-note">Deterministic ATS-style screen</span>
-            </div>
-            <div class="analysis-kpi">
-              <span class="analysis-kpi-label">AI delta</span>
+            <div class="analysis-kpi" title="How much the AI's read differs from the score">
+              <span class="analysis-kpi-label">AI adjustment</span>
               <strong class="analysis-kpi-delta-${aiDeltaTone}">${escHtml(aiDeltaText)}</strong>
-              <span class="analysis-kpi-note">Narrative lift vs screen score</span>
             </div>
-            <div class="analysis-kpi">
-              <span class="analysis-kpi-label">Required gaps</span>
+            <div class="analysis-kpi" title="Required skills in the job post that your profile doesn't cover">
+              <span class="analysis-kpi-label">Missing requirements</span>
               <strong>${(m.required_gaps || []).length}</strong>
-              <span class="analysis-kpi-note">Direct misses still on the JD</span>
             </div>
-            <div class="analysis-kpi">
-              <span class="analysis-kpi-label">Screening risks</span>
+            <div class="analysis-kpi" title="Things likely to get this application filtered out, like a years-of-experience cutoff">
+              <span class="analysis-kpi-label">Risks</span>
               <strong>${risks.length}</strong>
-              <span class="analysis-kpi-note">Years / hard-filter concerns</span>
             </div>
-            <div class="analysis-kpi">
-              <span class="analysis-kpi-label">Excluded items</span>
+            <div class="analysis-kpi" title="Skills you excluded from the score">
+              <span class="analysis-kpi-label">Excluded by you</span>
               <strong>${analysisState.ignored_count || 0}</strong>
-              <span class="analysis-kpi-note">Ignored from deterministic score</span>
             </div>
           </div>
           <div class="mc-readiness ${rdc?.cls || ''}">
-            <span class="mc-rd-label">Why the screen reads it this way</span>
+            <span class="mc-rd-label">Why this score</span>
             <span class="mc-rd-reason">${escHtml(buildDeterministicReason(m))}</span>
           </div>
         </section>
 
         <section class="mc analysis-section-band">
-          <div class="mc-head">${mcIcon(MC_ICONS.layers)} Required items you want counted</div>
-          <div class="analysis-section-note">Click any badge to exclude it from the deterministic score. Excluded badges stay visible in gray, and you can click them again to turn them back on.</div>
-          ${renderSkillGroup('Direct matches', 'matched', baselineLists.skills_matched || m.skills_matched || [], 'These are already grounded in your profile.')}
+          <div class="mc-head">${mcIcon(MC_ICONS.layers)} Skills counted in the score</div>
+          <div class="analysis-section-note">Click a skill to exclude it from the score; click again to restore it.</div>
+          ${renderSkillGroup('In your profile', 'matched', baselineLists.skills_matched || m.skills_matched || [])}
           ${renderPartialMatches(baselineLists.partial_matches || m.partial_matches || [])}
-          ${renderSkillGroup('Required gaps', 'required', baselineLists.required_gaps || m.required_gaps || [], 'Explicit JD asks still missing from your current profile.')}
-          ${renderSkillGroup('Preferred gaps', 'optional', baselineLists.nice_to_have_gaps || m.nice_to_have_gaps || [], 'Useful context, but these should not dominate the screen.')}
+          ${renderSkillGroup('Required, but missing', 'required', baselineLists.required_gaps || m.required_gaps || [])}
+          ${renderSkillGroup('Nice to have, missing', 'optional', baselineLists.nice_to_have_gaps || m.nice_to_have_gaps || [])}
           ${profileGapNames.length ? `<div class="mc-nudge">
             <span class="mc-nudge-icon">!</span>
             <div>Your profile likely implies <strong>${escHtml(profileGapNames.join(', '))}</strong>, but those skills are not listed directly yet.</div>
@@ -2927,19 +2942,19 @@ function renderJobDetailCards(job) {
         </section>
 
         <section class="mc analysis-section-band">
-          <div class="mc-head">${mcIcon(MC_ICONS.trending)} Grounded evidence</div>
+          <div class="mc-head">${mcIcon(MC_ICONS.trending)} Evidence</div>
           <div class="analysis-pill-list">
             <div>
-              <div class="analysis-section-head"><div>Matched evidence</div></div>
-              ${renderListRows((evidence.matched_skills || []).slice(0, 6), 'No direct skill evidence was captured.')}
+              <div class="analysis-section-head"><div>Matched skills</div></div>
+              ${renderListRows((evidence.matched_skills || []).slice(0, 6), 'None found.')}
             </div>
             <div>
-              <div class="analysis-section-head"><div>Project anchors</div></div>
-              ${renderListRows((evidence.project_anchors || []).slice(0, 4), 'No strong project anchor was captured.')}
+              <div class="analysis-section-head"><div>Supporting projects</div></div>
+              ${renderListRows((evidence.project_anchors || []).slice(0, 4), 'None found.')}
             </div>
             <div>
-              <div class="analysis-section-head"><div>Screening risks</div></div>
-              ${renderListRows(risks, 'No explicit screening risk was detected.')}
+              <div class="analysis-section-head"><div>Risks</div></div>
+              ${renderListRows(risks, 'None detected.')}
             </div>
           </div>
         </section>
@@ -2950,7 +2965,7 @@ function renderJobDetailCards(job) {
         </section>` : ''}
 
         <section class="mc analysis-section-band">
-          <div class="mc-head">${mcIcon(MC_ICONS.folder)} Relevant projects and resume angles</div>
+          <div class="mc-head">${mcIcon(MC_ICONS.folder)} Projects to highlight</div>
           ${projectsHtml}
         </section>
 
@@ -2962,26 +2977,23 @@ function renderJobDetailCards(job) {
 
       <aside class="analysis-rail">
         <section class="mc analysis-actions-panel">
-          <div class="mc-head">${mcIcon(MC_ICONS.trending)} Analysis controls</div>
-          <button type="button" id="btn-reanalyze-analysis" class="ps-save-btn analysis-primary-btn">Re-enrich with AI</button>
+          <div class="mc-head">${mcIcon(MC_ICONS.trending)} Actions</div>
+          <button type="button" id="btn-reanalyze-analysis" class="ps-save-btn analysis-primary-btn" title="Re-runs the AI summary and recommendations; the score itself stays the same">Refresh AI Analysis</button>
           ${openUrl ? `<button type="button" id="btn-open-job-browser" class="ps-btn-ghost analysis-secondary-btn" data-open-url="${escAttr(openUrl)}">Open job in browser</button>` : ''}
-          ${(analysisState.ignored_count || 0) ? `<button type="button" id="btn-reset-ignored-skills" class="ps-btn-ghost analysis-secondary-btn">Reset excluded items</button>` : ''}
-          <div class="analysis-rail-note">The screen score is deterministic. Re-enrich only refreshes the AI summary, recommendations, and resume-facing narrative.</div>
-          ${analysisState.enrichment_stale ? `<div class="analysis-stale-note">The deterministic score reflects your current badge selection. AI text may still reflect the previous selection until you re-enrich.</div>` : ''}
+          ${(analysisState.ignored_count || 0) ? `<button type="button" id="btn-reset-ignored-skills" class="ps-btn-ghost analysis-secondary-btn">Restore excluded skills</button>` : ''}
+          ${analysisState.enrichment_stale ? `<div class="analysis-stale-note">You changed which skills count since the last AI pass - refresh to bring the summary up to date.</div>` : ''}
         </section>
 
         <section class="mc analysis-rail-panel">
-          <div class="mc-head">${mcIcon(MC_ICONS.layers)} Improvement cues</div>
+          <div class="mc-head">${mcIcon(MC_ICONS.layers)} Before you apply</div>
           <div class="analysis-kpi-strip analysis-kpi-strip-rail">
-            <div class="analysis-kpi">
-              <span class="analysis-kpi-label">Final screen</span>
+            <div class="analysis-kpi" title="Your score if a recruiter accepts the AI's framing of your experience">
+              <span class="analysis-kpi-label">Potential score</span>
               <strong>${screeningScore}</strong>
-              <span class="analysis-kpi-note">If AI framing is accepted as-is</span>
             </div>
-            <div class="analysis-kpi">
-              <span class="analysis-kpi-label">Hard gaps</span>
+            <div class="analysis-kpi" title="Missing requirements that usually get an application rejected outright">
+              <span class="analysis-kpi-label">Blocking gaps</span>
               <strong>${m.analysis_meta?.hard_required_gap_count || 0}</strong>
-              <span class="analysis-kpi-note">Gaps that tend to block screening</span>
             </div>
           </div>
           ${(m.green_flags || []).length ? `
@@ -2999,11 +3011,10 @@ function renderJobDetailCards(job) {
         </section>
 
         <section class="mc analysis-rail-panel">
-          <div class="mc-head">${mcIcon(MC_ICONS.file)} Analysis history</div>
-          <div class="analysis-rail-note">Each rerun is stored so you can compare how profile edits or badge exclusions changed the screen.</div>
-          ${historyLoading ? `<div class="analysis-section-note">Loading saved runs...</div>` : ''}
+          <div class="mc-head">${mcIcon(MC_ICONS.file)} History</div>
+          ${historyLoading ? `<div class="analysis-section-note">Loading…</div>` : ''}
           ${!historyLoading && historyRows ? `<div class="analysis-history-list">${historyRows}</div>` : ''}
-          ${!historyLoading && !historyRows ? `<div class="analysis-section-note">No saved analysis runs yet. Your next rerun will appear here.</div>` : ''}
+          ${!historyLoading && !historyRows ? `<div class="analysis-section-note">Past analysis runs will appear here.</div>` : ''}
         </section>
       </aside>
     </div>`;
@@ -3164,7 +3175,7 @@ function buildResumeSkillWorkspace(job) {
   for (const skill of (analysis.required_gaps || [])) {
     upsert({
       skill,
-      reason: 'Explicit JD ask. Include only if you can defend it honestly.',
+      reason: 'In the job post but not in your profile - add it only if you can back it up.',
       source: 'required',
       tone: 'required',
       allowProfile: false,
@@ -3175,22 +3186,19 @@ function buildResumeSkillWorkspace(job) {
   const sections = [
     {
       key: 'inferred',
-      title: 'Inferred From Experience',
-      note: 'Grounded by your experience or project narrative.',
+      title: 'From your experience',
       actions: ['select', 'profile'],
       items: all.filter(item => item.source === 'inferred'),
     },
     {
       key: 'adjacent',
-      title: 'Adjacent Skill Families',
-      note: 'Deterministic family matches surfaced from the analysis.',
+      title: 'Related to your skills',
       actions: ['select'],
       items: all.filter(item => item.source === 'adjacent'),
     },
     {
       key: 'required',
-      title: 'JD Skills You May Still Add',
-      note: 'Resume-only adds when the JD uses a tool name you genuinely know.',
+      title: 'Asked for in the job post',
       actions: ['select'],
       items: all.filter(item => item.source === 'required'),
     },
@@ -3221,114 +3229,6 @@ function buildResumeSelectionContext(job, extraSkills) {
     .map(item => ({ skill: item.skill, source: item.source, reason: item.reason }));
 }
 
-function renderResumeSuggestions(job) {
-  const el = document.getElementById('resume-actions-pane');
-  if (!el) return;
-  const profileGaps = normalizeGaps(job.match_result?.profile_gaps);
-  const accepted    = job.resume_extra_skills || [];
-  const hasDraft    = !!job.resume_draft;
-
-  const skillRows = profileGaps.map(gap => `
-    <div class="ra-skill-row">
-      <div class="ra-skill-info">
-        <span class="ra-skill-name">${escHtml(gap.skill)}</span>
-        ${gap.reason ? `<span class="ra-skill-reason">${escHtml(gap.reason)}</span>` : ''}
-      </div>
-      <div class="ra-skill-btns">
-        <label class="rsugg-check" title="Include in next draft">
-          <input type="checkbox" class="rsugg-resume-cb" data-skill="${escAttr(gap.skill)}"${accepted.includes(gap.skill) ? ' checked' : ''}>
-          <span>Draft</span>
-        </label>
-        <button class="rsugg-add-profile ps-btn-ghost" data-skill="${escAttr(gap.skill)}">+&nbsp;Profile</button>
-      </div>
-    </div>`).join('');
-
-  el.innerHTML = `
-    <div class="ra-section">
-      <div class="ra-section-head">${mcIcon(MC_ICONS.layers)} Inferred Skills</div>
-      ${profileGaps.length ? `
-        <p class="ra-hint">Skills implied by your experience but not yet in your profile.</p>
-        <div class="ra-skills-list">${skillRows}</div>
-        <div class="ra-agg-btns">
-          <button id="btn-add-all-profile" class="ps-btn-ghost ra-agg-btn">Add all to profile</button>
-          <button id="btn-include-all-draft" class="ps-btn-ghost ra-agg-btn">Include all in draft</button>
-        </div>
-      ` : `
-        <p class="ra-hint" style="color:var(--dim)">Profile looks complete for this role - no inferred gaps detected.</p>
-      `}
-    </div>
-
-    <div class="ra-divider"></div>
-
-    <div class="ra-section">
-      <div class="ra-section-head">${mcIcon(MC_ICONS.file)} Resume</div>
-      <div class="ra-actions-stack">
-        <button id="btn-compose-resume" class="ps-save-btn ra-generate-btn">
-          ${hasDraft ? 'Update Draft' : 'Generate Resume'}
-        </button>
-        ${hasDraft ? `<button id="btn-recompose-resume" class="ps-btn-ghost ra-reanalyze-btn">Re-generate from scratch</button>` : ''}
-        <button id="btn-reanalyze-resume" class="ps-btn-ghost ra-reanalyze-btn">Re-analyze Job</button>
-      </div>
-      <div id="compose-status" class="gen-status hidden"></div>
-    </div>`;
-}
-
-// ── Resume Composition engine ─────────────────────────────────────────────────
-async function runResumeComposition(job, extraSkills) {
-  const p = state.profile;
-  const prompt =
-    `CANDIDATE PROFILE:\n${JSON.stringify(p, null, 2)}\n\n` +
-    `JOB ANALYSIS:\n${JSON.stringify(job.match_result, null, 2)}\n\n` +
-    `JOB DESCRIPTION:\n${job.description}\n\n` +
-    (extraSkills.length ? `EXTRA SKILLS TO INCLUDE IN RESUME:\n${extraSkills.join(', ')}\n\n` : '') +
-    `Compose a targeted resume draft for: ${[job.title, job.company].filter(Boolean).join(' at ')}`;
-  return runAgentToFile('resume-composer', prompt);
-}
-
-async function composeResume(forceRegenerate = false) {
-  const job = jobById(state.activeJobId);
-  if (!job) return;
-  if (!state.profile) { const ok = await loadProfile(); if (!ok) { showToast('Add a profile first.'); return; } }
-
-  const extraSkills = [...document.querySelectorAll('.rsugg-resume-cb:checked')]
-    .map(cb => cb.dataset.skill).filter(Boolean);
-  job.resume_extra_skills = extraSkills;
-
-  // ── Deterministic path: draft exists and no re-generate requested ─────────
-  if (job.resume_draft && !forceRegenerate) {
-    const baseSk  = job.resume_draft._base_skills || [];
-    const merged  = [...new Set([...baseSk, ...extraSkills])];
-    job.resume_draft = { ...job.resume_draft, skills: merged };
-    await persistJobs();
-    renderResumeSuggestions(job);
-    renderResumePreview(job);
-    showToast('Draft updated.');
-    return;
-  }
-
-  // ── LLM path: no draft yet, or explicit re-generate ──────────────────────
-  const btn    = document.getElementById('btn-compose-resume');
-  const status = document.getElementById('compose-status');
-  if (btn) btn.disabled = true;
-  status.textContent = 'Composing targeted resume draft…';
-  status.classList.remove('hidden');
-
-  try {
-    const draft = await runResumeComposition(job, extraSkills);
-    draft._base_skills = (draft.skills || []).filter(s => !extraSkills.includes(s));
-    job.resume_draft = draft;
-    await persistJobs();
-    renderResumeSuggestions(job);
-    renderResumePreview(job);
-    switchDetailTab('resume');
-    showToast('Resume draft ready.');
-  } catch (e) {
-    status.textContent = `Failed: ${e.message}`;
-    if (btn) btn.disabled = false;
-    showToast('Composition failed - try again.');
-  }
-}
-
 async function addSkillToProfile(skill, silent = false) {
   if (!state.profile) return;
   const p = state.profile;
@@ -3346,24 +3246,10 @@ async function addSkillToProfile(skill, silent = false) {
   if (cb) cb.checked = true;
 }
 
-async function addAllSkillsToProfile() {
-  const job  = jobById(state.activeJobId);
-  const gaps = normalizeGaps(job?.match_result?.profile_gaps);
-  if (!gaps.length) { showToast('No inferred skills to add.'); return; }
-  for (const gap of gaps) await addSkillToProfile(gap.skill, true);
-  showToast(`Added ${gaps.length} inferred skill${gaps.length !== 1 ? 's' : ''} to profile.`);
-}
-
-function includeAllInDraft() {
-  document.querySelectorAll('.rsugg-resume-cb').forEach(cb => { cb.checked = true; });
-  showToast('All inferred skills will be included in the next draft.');
-}
-
 function renderResumeSuggestions(job) {
   const el = document.getElementById('resume-actions-pane');
   if (!el) return;
   const workspace = buildResumeSkillWorkspace(job);
-  const counts = workspace.counts;
   const hasDraft = !!job?.resume_draft;
 
   const renderSectionActions = section => {
@@ -3399,7 +3285,6 @@ function renderResumeSuggestions(job) {
       <div class="resume-panel-head">
         <div>
           <div class="resume-panel-title">${escHtml(section.title)}</div>
-          <div class="resume-panel-note">${escHtml(section.note)}</div>
         </div>
         <span class="resume-panel-count">${section.items.length}</span>
       </div>
@@ -3409,37 +3294,25 @@ function renderResumeSuggestions(job) {
 
   el.innerHTML = `
     <div class="resume-workspace-hero">
-      <div class="ra-section-head">${mcIcon(MC_ICONS.layers)} Resume Composition</div>
-      <div class="resume-hero-copy">Use grounded skill suggestions here to tailor this draft without changing your profile unless you explicitly choose to.</div>
-      <div class="resume-summary-kpis">
-        <div class="resume-kpi"><span class="resume-kpi-label">Selected</span><strong>${workspace.selectedCount}</strong><span class="resume-kpi-note">Extra skills queued for the next draft</span></div>
-        <div class="resume-kpi"><span class="resume-kpi-label">Inferred</span><strong>${counts.inferred}</strong><span class="resume-kpi-note">Backed by experience or projects</span></div>
-        <div class="resume-kpi"><span class="resume-kpi-label">Adjacent</span><strong>${counts.adjacent}</strong><span class="resume-kpi-note">Deterministic family matches</span></div>
-        <div class="resume-kpi"><span class="resume-kpi-label">Required</span><strong>${counts.required}</strong><span class="resume-kpi-note">Manual JD adds for this resume only</span></div>
-      </div>
+      <div class="ra-section-head">${mcIcon(MC_ICONS.layers)} Skills for this resume</div>
+      ${workspace.selectedCount ? `<div class="resume-hero-copy">${workspace.selectedCount} extra skill${workspace.selectedCount !== 1 ? 's' : ''} selected for the next draft.</div>` : ''}
     </div>
 
-    ${sectionHtml || `<div class="resume-panel"><div class="resume-panel-note">No extra resume skill candidates were surfaced for this role yet.</div></div>`}
+    ${sectionHtml || `<div class="resume-panel"><div class="resume-panel-note">No skill suggestions for this role.</div></div>`}
 
     <section class="resume-panel resume-compose-panel">
       <div class="resume-panel-head">
         <div>
-          <div class="resume-panel-title">Draft Actions</div>
-          <div class="resume-panel-note">Use static updates for skill selections, and AI updates only for rewriting summary and bullets.</div>
+          <div class="resume-panel-title">Draft</div>
         </div>
       </div>
       <div class="ra-actions-stack">
-        <button id="btn-compose-resume" class="ps-save-btn ra-generate-btn">
-          ${hasDraft ? 'Compose Resume' : 'Compose Resume'}
+        <button id="btn-compose-resume" class="ps-save-btn ra-generate-btn" title="${hasDraft ? 'Rebuild the full draft from your profile and this job (uses AI)' : 'Build a role-targeted draft from your profile and this job (uses AI)'}">
+          ${hasDraft ? 'Regenerate Resume' : 'Generate Resume'}
         </button>
-        ${hasDraft ? `<button id="btn-apply-resume-selection" class="ps-btn-ghost ra-reanalyze-btn">Apply Current Selections</button>` : ''}
-        ${hasDraft ? `<button id="btn-refresh-resume-ai" class="ps-btn-ghost ra-reanalyze-btn">Refresh AI Wording</button>` : ''}
-        <button id="btn-clear-resume-skills" class="ps-btn-ghost ra-reanalyze-btn">Clear Selected Extras</button>
-      </div>
-      <div class="resume-action-legend">
-        <div><strong>Compose Resume</strong> builds the full role-targeted draft.</div>
-        ${hasDraft ? `<div><strong>Apply Current Selections</strong> updates only the selected skills in the existing draft.</div>` : ''}
-        ${hasDraft ? `<div><strong>Refresh AI Wording</strong> rewrites summary and bullets from the current draft context.</div>` : ''}
+        ${hasDraft ? `<button id="btn-apply-resume-selection" class="ps-btn-ghost ra-reanalyze-btn" title="Update the draft's skill list with your checkbox selections - instant, no AI">Apply Skill Selections</button>` : ''}
+        ${hasDraft ? `<button id="btn-refresh-resume-ai" class="ps-btn-ghost ra-reanalyze-btn" title="Rewrite the summary and bullets of the existing draft (uses AI)">Rewrite with AI</button>` : ''}
+        <button id="btn-clear-resume-skills" class="ps-btn-ghost ra-reanalyze-btn" title="Uncheck every extra skill selected for this draft">Clear Selections</button>
       </div>
       <div id="compose-status" class="gen-status hidden"></div>
     </section>`;
@@ -3495,14 +3368,24 @@ async function composeResume(mode = 'compose') {
   const extraSkills = selectedResumeExtraSkills(job);
   job.resume_extra_skills = extraSkills;
 
-  const btn    = document.getElementById('btn-compose-resume');
+  const pane   = document.getElementById('resume-actions-pane');
   const status = document.getElementById('compose-status');
-  if (btn) btn.disabled = true;
+  const busyLabel = mode === 'refresh_ai' ? 'Rewriting with AI…' : 'Generating resume…';
+  // Block every draft action (buttons + skill checkboxes) while the model runs.
+  pane?.querySelectorAll('button, input').forEach(el => { el.disabled = true; });
+  const btn = document.getElementById('btn-compose-resume');
+  if (btn) btn.innerHTML = `<sl-spinner style="font-size:13px;--track-width:2px"></sl-spinner> ${busyLabel}`;
   if (status) {
-    status.textContent = mode === 'refresh_ai'
-      ? 'Refreshing AI wording...'
-      : 'Composing targeted resume draft...';
+    status.textContent = `${busyLabel} This usually takes under a minute.`;
     status.classList.remove('hidden');
+  }
+  const preview = document.getElementById('resume-preview-content');
+  if (preview) {
+    preview.innerHTML = `<div class="empty resume-preview-empty" style="padding-top:48px">
+      <sl-spinner style="font-size:28px"></sl-spinner>
+      <div class="empty-title" style="margin-top:14px">${busyLabel}</div>
+      <div class="empty-sub">The draft will appear here when it's ready.</div>
+    </div>`;
   }
 
   try {
@@ -3510,14 +3393,14 @@ async function composeResume(mode = 'compose') {
     draft._base_skills = (draft.skills || []).filter(s => !extraSkills.includes(s));
     job.resume_draft = draft;
     await persistJobs();
+    showToast(mode === 'refresh_ai' ? 'Resume rewritten.' : 'Resume draft ready.');
+  } catch (e) {
+    showToast(`Resume generation failed: ${e.message}`);
+  } finally {
+    // Re-render both panes; this restores enabled controls in every case.
     renderResumeSuggestions(job);
     renderResumePreview(job);
     switchDetailTab('resume');
-    showToast(mode === 'refresh_ai' ? 'AI wording refreshed.' : 'Resume draft ready.');
-  } catch (e) {
-    if (status) status.textContent = `Failed: ${e.message}`;
-    if (btn) btn.disabled = false;
-    showToast('Composition failed - try again.');
   }
 }
 
@@ -3562,7 +3445,7 @@ async function clearResumeSkillSelections() {
   job.resume_extra_skills = [];
   await persistJobs();
   renderResumeSuggestions(job);
-  showToast('Cleared selected resume extras.');
+  showToast('Cleared skill selections.');
 }
 
 // ── Application tab ───────────────────────────────────────────────────────────
@@ -3687,7 +3570,13 @@ function renderApplicationTab(job) {
           Detected Fields
           ${isOpen ? `<button class="app-rescan-btn" id="btn-rescan-fields" title="Re-scan page for fields"><sl-icon library="lucide" name="refresh-cw"></sl-icon></button>` : ''}
         </div>
-        <div class="app-fields-body" id="app-fields-body"></div>
+        <div class="app-fields-body" id="app-fields-body">${isOpen ? '' : `
+          <div class="app-fields-empty">
+            <sl-icon library="lucide" name="file-search"></sl-icon>
+            ${url
+              ? 'Nothing scanned yet. Open the application and the form fields on the page will be listed here.'
+              : 'Add an apply link to this job to open its application and scan the form fields.'}
+          </div>`}</div>
       </div>
 
       <div class="app-ctrl-rail">
@@ -3892,6 +3781,8 @@ function openResetProfileDialog() {
 }
 
 async function doResetBrowserProfile() {
+  const confirmBtn = document.getElementById('btn-reset-profile-confirm');
+  if (confirmBtn) { confirmBtn.loading = true; confirmBtn.disabled = true; }
   try {
     const res = await bridge.browserResetProfile();
     if (!res?.ok) { showToast(`Reset failed: ${res?.error || 'unknown'}`); return; }
@@ -3902,6 +3793,9 @@ async function doResetBrowserProfile() {
     showToast('Browser account reset - set it up again to reconnect your logins.');
   } catch (e) {
     showToast(`Reset error: ${e.message}`);
+  } finally {
+    if (confirmBtn) { confirmBtn.loading = false; confirmBtn.disabled = false; }
+    document.getElementById('reset-browser-dialog')?.hide();
   }
 }
 
@@ -3972,8 +3866,7 @@ function renderResumePreview(job) {
   el.innerHTML = `
     <div class="rp-toolbar">
       <div class="rp-toolbar-copy">
-        <span class="rp-toolbar-label">One-page preview</span>
-        <span class="rp-toolbar-note">Scales with the window while keeping the page readable.</span>
+        <span class="rp-toolbar-label">Preview</span>
       </div>
       <button id="btn-export-pdf" class="ps-save-btn rp-export-btn">
         <sl-icon library="lucide" name="download" style="vertical-align:-2px"></sl-icon>
@@ -4272,7 +4165,7 @@ async function reAnalyzeJob() {
     if (!ok) { showToast('Profile missing.'); return; }
   }
   const btn = document.getElementById('btn-reanalyze-analysis');
-  if (btn) { btn.disabled = true; btn.textContent = 'Re-enriching...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Refreshing analysis…'; }
 
   try {
     if (job.match_result?.match_score != null) {
@@ -4301,7 +4194,7 @@ async function reAnalyzeJob() {
     renderJobDetailCards(job);
     renderResumeSuggestions(job);
     renderJobsDashboard();
-    if (btn) { btn.disabled = false; btn.textContent = 'Re-enrich with AI'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Refresh AI Analysis'; }
 
     const matchEl = document.getElementById('detail-match-results');
     if (matchEl && !matchEl.classList.contains('hidden')) injectEnrichingShimmer('detail-match');
@@ -4330,7 +4223,7 @@ async function reAnalyzeJob() {
     });
   } catch (e) {
     showToast(`Re-analysis failed: ${e.message}`);
-    if (btn) { btn.disabled = false; btn.textContent = 'Re-enrich with AI'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Refresh AI Analysis'; }
   }
 }
 
@@ -4643,75 +4536,9 @@ function switchView(view) {
 }
 
 // ── Utils ──────────────────────────────────────────────────────────────────────
-function setChromeCopy({ eyebrow, title, subtitle }) {
-  const eyebrowEl = document.getElementById('topbar-eyebrow');
-  const titleEl = document.getElementById('topbar-title');
-  const subtitleEl = document.getElementById('topbar-subtitle');
-  if (eyebrowEl && eyebrow) eyebrowEl.textContent = eyebrow;
-  if (titleEl && title) titleEl.textContent = title;
-  if (subtitleEl && subtitle) subtitleEl.textContent = subtitle;
-}
-
-function syncChrome(view, detail = {}) {
+function syncChrome(view) {
   document.querySelectorAll('.nav-item[data-view]').forEach(b =>
     b.classList.toggle('active', b.dataset.view === view));
-  document.querySelectorAll('.top-nav-item').forEach(b =>
-    b.classList.toggle('active', b.dataset.view === view));
-
-  if (view === 'profile') {
-    if (detail.section === 'ingest') {
-      setChromeCopy({
-        eyebrow: 'Profile / Ingest',
-        title: 'Add to Profile',
-        subtitle: 'Upload or paste new material and merge it into your professional source of truth.',
-      });
-      return;
-    }
-    setChromeCopy({
-      eyebrow: 'Career workspace',
-      title: 'Profile',
-      subtitle: 'Shape the profile that powers matching, resume tailoring, and application automation.',
-    });
-    return;
-  }
-
-  if (view === 'jobs') {
-    if (detail.section === 'add') {
-      setChromeCopy({
-        eyebrow: 'Jobs / Intake',
-        title: 'Add a Job',
-        subtitle: 'Capture the posting, enrich it, and turn it into an actionable opportunity.',
-      });
-      return;
-    }
-    if (detail.section === 'detail') {
-      const job = detail.job || jobById(state.activeJobId) || {};
-      const tab = detail.tab || 'analysis';
-      const subtitles = {
-        analysis: 'Audit the match, inspect evidence, and decide whether this role is worth pursuing.',
-        resume: 'Compose a targeted, one-page draft using deterministic structure and selective AI wording.',
-        application: 'Open the application workspace, verify fields, and keep the submission flow lightweight.',
-      };
-      setChromeCopy({
-        eyebrow: `Jobs / ${tab.charAt(0).toUpperCase() + tab.slice(1)}`,
-        title: job.title || 'Untitled Role',
-        subtitle: [job.company, subtitles[tab]].filter(Boolean).join(' - '),
-      });
-      return;
-    }
-    setChromeCopy({
-      eyebrow: 'Jobs / Dashboard',
-      title: 'Job Pipeline',
-      subtitle: 'Track saved opportunities, compare fit, and move quickly from analysis to action.',
-    });
-    return;
-  }
-
-  setChromeCopy({
-    eyebrow: 'Insights',
-    title: 'Saved Matches',
-    subtitle: 'A future workspace for trends, comparisons, and historical analysis snapshots.',
-  });
 }
 
 function escHtml(s) {
@@ -4850,10 +4677,6 @@ function wire() {
     const item = e.target.closest('.nav-item');
     if (item && !item.disabled && item.dataset.view) switchView(item.dataset.view);
   });
-  document.querySelector('.top-nav')?.addEventListener('click', e => {
-    const item = e.target.closest('.top-nav-item');
-    if (item && !item.disabled && item.dataset.view) switchView(item.dataset.view);
-  });
 
   // Jobs tab - dashboard
   document.getElementById('btn-add-job').addEventListener('click', openAddJobView);
@@ -4974,7 +4797,7 @@ function wire() {
 
   // Settings
   document.getElementById('btn-settings').addEventListener('click', openSettings);
-  document.getElementById('btn-topbar-settings')?.addEventListener('click', openSettings);
+  document.getElementById('model-badge')?.addEventListener('click', openSettings);
   document.getElementById('auto-analyze-toggle').addEventListener('sl-change', e => {
     state.autoAnalyzePaste = e.target.checked;
     localStorage.setItem('auto-analyze-paste', e.target.checked ? '1' : '');
@@ -5017,7 +4840,8 @@ function wire() {
       if (body) body.textContent = 'This is permanent and cannot be undone.';
       if (confirmBtn) confirmBtn.textContent = 'I understand, delete everything';
     } else {
-      document.getElementById('reset-browser-dialog').hide();
+      // doResetBrowserProfile shows a busy state on the confirm button and
+      // hides the dialog itself once the reset finishes.
       doResetBrowserProfile();
     }
   });

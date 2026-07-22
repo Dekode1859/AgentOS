@@ -36,7 +36,6 @@
           </svg>
         </div>
         <div class="brand-copy">
-          <span class="brand-eyebrow">Private workspace</span>
           <span class="brand-text">CareerForge</span>
         </div>
         <button id="btn-sidebar-collapse" class="sidebar-collapse-btn" title="Collapse sidebar">
@@ -63,11 +62,10 @@
 
       <div class="sidebar-meta-card">
         <div class="sidebar-meta-title">Active model</div>
-        <div id="model-badge" title="Active model">
+        <div id="model-badge" title="Change model in Settings">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
           <span id="model-badge-text">-</span>
         </div>
-        <p class="sidebar-meta-note">Keep jobs, analysis, and resume drafts together without leaving this local workspace.</p>
       </div>
 
       <div id="sidebar-footer">
@@ -81,34 +79,6 @@
   </aside>
 
   <div id="workspace-shell">
-    <header id="topbar">
-      <div class="topbar-copy">
-        <div class="topbar-copy-row">
-          <span class="topbar-eyebrow" id="topbar-eyebrow">Career workspace</span>
-          <span class="topbar-dot"></span>
-          <span class="topbar-meta">Local-first application</span>
-        </div>
-        <div class="topbar-title-row">
-          <div class="topbar-title-stack">
-            <h1 id="topbar-title">Profile</h1>
-            <p id="topbar-subtitle">Your professional source of truth for matching, tailoring, and applying.</p>
-          </div>
-          <nav class="top-nav" aria-label="Primary">
-            <button class="top-nav-item active" data-view="profile">Profile</button>
-            <button class="top-nav-item" data-view="jobs">Jobs</button>
-            <button class="top-nav-item" data-view="matches" disabled>Insights</button>
-          </nav>
-        </div>
-      </div>
-      <div class="topbar-actions">
-        <span class="topbar-pill">Private data</span>
-        <span class="topbar-pill topbar-pill-accent">Ready to enrich</span>
-        <button class="topbar-icon-btn" id="btn-topbar-settings" title="Open settings">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-        </button>
-      </div>
-    </header>
-
     <main id="main">
 
       <section id="view-profile" class="view active">
@@ -157,7 +127,7 @@
             <div id="doc-list"></div>
             <sl-button id="btn-generate" variant="primary" size="medium" disabled style="width:100%;margin-top:4px">
               <sl-icon slot="prefix" library="lucide" name="wand-2"></sl-icon>
-              Extract & Merge
+              Add to Profile
             </sl-button>
             <div id="gen-status" class="gen-status hidden"></div>
           </div>
@@ -261,7 +231,7 @@
             <div id="detail-match-empty" class="empty">
               <sl-icon library="lucide" name="sparkles" class="empty-icon"></sl-icon>
               <div class="empty-title">No analysis yet</div>
-              <div class="empty-sub">Run AI enrichment here to score this job against your current profile.</div>
+              <div class="empty-sub">Run an analysis to score this job against your profile.</div>
             </div>
             <div id="detail-match-results" class="hidden mc-grid"></div>
           </div>
@@ -337,9 +307,8 @@
     <h3><sl-icon library="lucide" name="clipboard-paste"></sl-icon> Paste to Analyze</h3>
     <p class="settings-hint">On the Jobs page, paste a job link (Ctrl/Cmd+V) to scrape and add it automatically.</p>
     <sl-switch id="auto-analyze-toggle">
-      Auto-analyze pasted jobs
+      Score pasted jobs automatically
     </sl-switch>
-    <p class="settings-hint" style="margin-top:6px">When on, each pasted job is also scored against your profile right away - one extra model call per paste.</p>
   </div>
 
   <sl-button slot="footer" id="btn-settings-close">Close</sl-button>
@@ -364,7 +333,7 @@
 <sl-dialog id="paste-job-dialog" label="Analyze this job?" style="--width: 480px">
   <p class="settings-hint" style="margin-top:0">Detected a job link in your clipboard. Scrape the page and add it as a tracked job?</p>
   <div style="background:var(--surface-2,#1c1c22);border-radius:8px;padding:10px 12px;word-break:break-all;font-size:13px;line-height:1.5" id="paste-job-url"></div>
-  <p class="settings-hint" style="margin-bottom:0">This runs an AI extraction agent in the background (uses tokens). You can keep working while it adds the job.</p>
+  <p class="settings-hint" style="margin-bottom:0">Runs in the background - you can keep working while it's added.</p>
   <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
     <sl-button id="btn-paste-cancel">Cancel</sl-button>
     <sl-button id="btn-paste-analyze" variant="primary">

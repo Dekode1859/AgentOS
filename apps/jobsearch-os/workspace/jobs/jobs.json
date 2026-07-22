@@ -1,5 +1,229 @@
 [
   {
+    "id": "1784695845171",
+    "title": "Gen AI Developer",
+    "company": "HCLTech",
+    "link": "https://www.linkedin.com/jobs/view/4442599040/?trk=eml-email_job_alert_digest_01-primary_job_list-0-jobcard_body_0_jobid_4442599040_ssid_1740404845_fmid_gbjne2~mrvisv8j~gt&refId=OxUlOaZex9Ch90QOqXwNrA%3D%3D&trackingId=zp6pubsmrQbxNvizo%2FN6Cg%3D%3D",
+    "description": "About the job\nRole: GenAI Developer\n\nExperience:2+ Years\n\n Location: Noida\n\nKey Skills:\n\nHands-on experience in Generative AI, LLMs, RAG, and Agentic AI\nStrong knowledge of Python, NLP, and Machine Learning\nExperience with LangChain, LangGraph, CrewAI, AutoGen, or similar frameworks\nExperience integrating AI solutions with APIs, databases, and enterprise applications\nExposure to prompt engineering, vector databases, embeddings, and AI agents\nGood problem-solving, communication, and stakeholder interaction skills\n\nRequirements added by the job poster\n\n• 1+ years of work experience with Agentic AI Development\n\n• 2+ years of work experience with Generative AI\n\n• 2+ years of work experience with AIML",
+    "status": "saved",
+    "match_score": 65,
+    "match_result": {
+      "match_score": 68,
+      "skills_matched": [
+        "LangChain",
+        "RAG Architecture"
+      ],
+      "partial_matches": [
+        {
+          "skill": "generative ai",
+          "bucket": "AI / ML",
+          "reason": "Has LlamaIndex, LangChain in the same llm family",
+          "credit": 0.65
+        },
+        {
+          "skill": "llms",
+          "bucket": "AI / ML",
+          "reason": "Has LlamaIndex, LangChain in the same llm family",
+          "credit": 0.65
+        }
+      ],
+      "required_gaps": [
+        "agentic ai"
+      ],
+      "nice_to_have_gaps": [
+        "langgraph",
+        "autogen",
+        "crewai"
+      ],
+      "screening_risks": [],
+      "analysis_meta": {
+        "candidate_years_experience": 2.2,
+        "required_years_experience": 2,
+        "years_gap": null,
+        "base_score": 65,
+        "risk_penalty": 0,
+        "hard_required_gap_count": 0,
+        "hard_required_gaps": [],
+        "evidence": {
+          "matched_skills": [
+            {
+              "skill": "LangChain",
+              "source_type": "profile_skill",
+              "source_label": "AI / ML",
+              "source_name": "LangChain",
+              "snippet": "Listed under AI / ML"
+            },
+            {
+              "skill": "RAG Architecture",
+              "source_type": "profile_skill",
+              "source_label": "Other",
+              "source_name": "RAG Architecture",
+              "snippet": "Listed under Other"
+            }
+          ],
+          "partial_matches": [
+            {
+              "skill": "generative ai",
+              "family": "AI / ML",
+              "evidence": [
+                "LlamaIndex",
+                "LangChain"
+              ],
+              "reason": "Has LlamaIndex, LangChain in the same llm family"
+            },
+            {
+              "skill": "llms",
+              "family": "AI / ML",
+              "evidence": [
+                "LlamaIndex",
+                "LangChain"
+              ],
+              "reason": "Has LlamaIndex, LangChain in the same llm family"
+            }
+          ],
+          "project_anchors": [
+            {
+              "id": "1782322976136p1",
+              "name": "Mantis — AI Product Intelligence Platform",
+              "matched_tech": [
+                "LangChain"
+              ],
+              "matched_tags": [],
+              "evidence": "AI-powered product tracking platform capable of extracting information from arbitrary e-commerce storefronts.. Developed an AI-powered product tracking platform capable of extract…",
+              "reason": "1 direct signal from project stack"
+            }
+          ]
+        }
+      },
+      "apply_readiness": {
+        "verdict": "stretch",
+        "reason": "Core skill gaps are still visible in the screen: agentic ai."
+      },
+      "relevant_projects": [
+        {
+          "id": "1782322976136p1",
+          "name": "Mantis — AI Product Intelligence Platform",
+          "matched_tech": [
+            "LangChain"
+          ],
+          "matched_tags": [],
+          "evidence": "AI-powered product tracking platform capable of extracting information from arbitrary e-commerce storefronts.. Developed an AI-powered product tracking platform capable of extract…",
+          "reason": "1 direct signal from project stack",
+          "talking_points": [
+            "Built the Mantis platform using LangChain to extract product information from arbitrary e-commerce storefronts, demonstrating RAG architecture applied to unstructured web data",
+            "Designed fault-tolerant extraction and notification systems with Temporal workflow orchestration, showing experience building production-grade AI pipelines that the role's enterprise integration work requires"
+          ]
+        }
+      ],
+      "summary": "Pratik has direct LangChain and RAG Architecture experience demonstrated through the Mantis project, and has built multi-agent document intelligence systems using Agno at Fincepta — evidence that partially closes the agentic AI gap. The 65 base score is adjusted up by 3 because the Fincepta role's multi-agent work with Agno (a listed Agentic Framework) and the 'AI agent orchestration' skill in the profile show more agentic capability than the gap analysis alone captures. The primary remaining risk is lack of hands-on experience with the specific frameworks the JD emphasizes: LangGraph, CrewAI, and AutoGen.",
+      "application_strategy": "Lead with the Mantis project's LangChain integration and the Fincepta multi-agent document intelligence system to demonstrate RAG and agentic fluency, then explicitly acknowledge your Agno experience as evidence of picking up agentic frameworks quickly while framing your intent to expand into LangGraph/CrewAI.",
+      "profile_gaps": [
+        {
+          "skill": "NLP",
+          "reason": "Built document intelligence and PDF compliance pipelines at Fincepta and published a paper on legal document summarization at ICCCNT 2024, but NLP is not listed as a skill."
+        },
+        {
+          "skill": "Google Gemini",
+          "reason": "Used Gemini for multi-agent document intelligence and PDF compliance work at Fincepta, listed in role tags, but not in skill_buckets."
+        }
+      ],
+      "relevant_experience": "2.2 years as AI Engineer at Fincepta with hands-on LangChain, LlamaIndex, and RAG Architecture experience, plus multi-agent system design using Agno — directly covering the role's 2+ year GenAI and AIML requirements.",
+      "focus_areas": [
+        "Learn LangGraph for stateful agentic workflow orchestration, which the JD lists as a primary framework",
+        "Experiment with CrewAI or AutoGen to build multi-agent collaboration patterns the role explicitly requires",
+        "Build a small portfolio project combining LangGraph with PGVector to demonstrate the full RAG + agentic stack",
+        "Study enterprise API integration patterns for connecting AI agents to external databases and applications"
+      ],
+      "green_flags": [
+        "Mantis project uses LangChain with Temporal for asynchronous workflow pipelines, demonstrating production AI integration",
+        "Fincepta multi-agent document intelligence system reduced analyst turnaround from 7 days to 24 hours using Agno and LlamaIndex",
+        "Has PGVector and embeddings design experience, directly relevant to the role's vector database requirement",
+        "Published research on legal document summarization at ICCCNT 2024 shows applied NLP depth"
+      ]
+    },
+    "score_history": [],
+    "resume_draft": {
+      "summary": "Applied AI Engineer with 2+ years of experience building production-grade generative AI systems, including multi-agent document intelligence platforms using Agno and LangChain-powered RAG architectures. Proven track record reducing analyst turnaround time from 7 days to 24 hours through agentic workflow automation and enterprise API integration. Seeking to leverage expertise in LLM orchestration, embeddings optimization, and scalable backend systems to drive GenAI innovation at HCLTech.",
+      "skills": [
+        "Python",
+        "LangChain",
+        "LlamaIndex",
+        "RAG Architecture",
+        "Generative AI",
+        "LLMs",
+        "Agentic AI",
+        "Prompt Engineering",
+        "Embeddings design and optimization",
+        "NLP",
+        "Google Gemini",
+        "FastAPI",
+        "PostgreSQL",
+        "PGVector",
+        "AWS",
+        "Docker",
+        "XGBoost",
+        "PyTorch"
+      ],
+      "experience": [
+        {
+          "id": "1782322976136e0",
+          "bullets": [
+            "Reduced analyst turnaround time from 7 days to 24 hours by designing and deploying a multi-agent document intelligence system using Agno, LlamaIndex, and Gemini for equipment financing workflows",
+            "Engineered feature generation pipeline producing 10,000+ derived financial indicators from large-scale transaction datasets, building scenario-specific XGBoost models enabling automated loan risk assessment and real-time inference",
+            "Designed serverless ETL architecture using AWS CDK, Glue, PySpark, and Redshift, automating ingestion and transformation of CloudWatch operational data for near real-time monitoring"
+          ]
+        }
+      ],
+      "projects": [
+        {
+          "id": "1782322976136p1",
+          "bullets": [
+            "Built AI-powered product tracking platform using LangChain to extract information from arbitrary e-commerce storefronts, demonstrating RAG architecture applied to unstructured web data",
+            "Designed fault-tolerant extraction and notification systems with Temporal workflow orchestration, creating production-grade AI pipelines for large-scale product monitoring",
+            "Integrated self-hosted AI infrastructure with Ollama to reduce operational costs and increase deployment flexibility for distributed AI systems"
+          ]
+        },
+        {
+          "id": "1782322976136p0",
+          "bullets": [
+            "Designed isolated service environments for orchestration, API routing, data persistence, and workflow execution using Proxmox, Docker, FastAPI, and PostgreSQL",
+            "Implemented secure API gateways and service-to-service communication patterns for running stateful AI workloads and workflow-driven applications",
+            "Created production-like environment for experimentation with distributed AI systems and workflow reliability using Temporal orchestration"
+          ]
+        }
+      ],
+      "_base_skills": [
+        "Python",
+        "LangChain",
+        "LlamaIndex",
+        "RAG Architecture",
+        "Generative AI",
+        "LLMs",
+        "Agentic AI",
+        "Prompt Engineering",
+        "Embeddings design and optimization",
+        "FastAPI",
+        "PostgreSQL",
+        "PGVector",
+        "AWS",
+        "Docker",
+        "XGBoost",
+        "PyTorch"
+      ]
+    },
+    "resume_extra_skills": [
+      "NLP",
+      "Google Gemini",
+      "generative ai",
+      "llms",
+      "agentic ai"
+    ],
+    "created_at": "2026-07-22T04:50:45.171Z",
+    "last_analysis_run_id": "20260722045045-v55dpw",
+    "last_analysis_at": "2026-07-22T04:50:45.183Z",
+    "analysis_ignored_skills": []
+  },
+  {
     "id": "1783538218880",
     "status": "saved",
     "created_at": "2026-07-08T19:16:58.880Z",
@@ -105,8 +329,79 @@
       ]
     },
     "score_history": [],
-    "resume_draft": null,
-    "resume_extra_skills": [],
+    "resume_draft": {
+      "summary": "Applied AI Engineer with hands-on experience building multi-agent systems and agentic workflows using LlamaIndex, LangChain, and Agno. Skilled in prompt engineering, API-driven automation with FastAPI, and workflow orchestration using Temporal. Production experience deploying scalable AI platforms on AWS with end-to-end ownership from architecture to deployment.",
+      "skills": [
+        "Prompt Engineering",
+        "AI agent orchestration",
+        "LlamaIndex",
+        "LangChain",
+        "Agno",
+        "Ollama",
+        "LLM",
+        "REST API architecture",
+        "FastAPI",
+        "Temporal",
+        "AWS",
+        "Docker",
+        "PostgreSQL",
+        "PGVector",
+        "Git",
+        "Cloud Architecture"
+      ],
+      "experience": [
+        {
+          "id": "1782322976136e0",
+          "bullets": [
+            "Reduced analyst turnaround time from 7 days to 24 hours by designing multi-agent document intelligence system using Agno, LlamaIndex, and Gemini for automated equipment financing workflows",
+            "Designed serverless ETL architecture using AWS CDK, Glue, PySpark, and Redshift automating ingestion and transformation of operational data for near real-time monitoring"
+          ]
+        }
+      ],
+      "projects": [
+        {
+          "id": "1782322976136p1",
+          "bullets": [
+            "Built asynchronous workflow pipelines using Temporal for monitoring, scheduling, and alerting across e-commerce product tracking platform",
+            "Designed fault-tolerant extraction and notification systems for large-scale product monitoring with self-hosted AI infrastructure"
+          ]
+        },
+        {
+          "id": "1782322976136p0",
+          "bullets": [
+            "Designed isolated service environments for workflow orchestration, API routing, data persistence, and execution using Docker, FastAPI, and Temporal",
+            "Implemented secure API gateways and service-to-service communication patterns for distributed AI system experimentation"
+          ]
+        }
+      ],
+      "_base_skills": [
+        "Prompt Engineering",
+        "AI agent orchestration",
+        "LlamaIndex",
+        "LangChain",
+        "Agno",
+        "Ollama",
+        "REST API architecture",
+        "FastAPI",
+        "Temporal",
+        "AWS",
+        "Docker",
+        "PostgreSQL",
+        "PGVector",
+        "Git",
+        "Cloud Architecture"
+      ]
+    },
+    "resume_extra_skills": [
+      "LLM",
+      "REST APIs",
+      "webhooks",
+      "JSON",
+      "unit testing",
+      "debugging",
+      "troubleshooting",
+      "no-code/low-code platforms"
+    ],
     "title": "Agentic Solution Engineer",
     "company": "Netomi",
     "link": "https://jobs.lever.co/netomi/b4d9ce2b-479e-47f2-a9c0-52827e94e129",
@@ -303,43 +598,128 @@
         "reason": "Core skill gaps are still visible in the screen: Pattern Recognition, Neural Networks, Natural Language Processing (NLP)."
       },
       "relevant_projects": [],
-      "summary": "Pratik has ML foundations with PyTorch, TensorFlow, and Scikit-Learn, and demonstrated production deployment through the credit underwriting platform at Fincepta featuring 10,000+ derived financial indicators. However, the role explicitly requires neural network and pattern recognition expertise as core day-to-day responsibilities, and Pratik's profile shows no deep learning projects—his ML work has been XGBoost-based and agent-system focused. His LlamaIndex/LangChain usage and legal document summarization publication suggest NLP capability that isn't listed as a skill.",
-      "application_strategy": "Lead with your production ML deployment experience at Fincepta (the credit underwriting platform and document intelligence system), then bridge to neural networks by framing your PyTorch/TensorFlow familiarity as a foundation you're ready to apply to the pattern recognition and deep learning work this role requires.",
+      "summary": "Pratik has 2.2 years building production AI systems at Fincepta, including a multi-agent document intelligence platform and a credit underwriting system with 10,000+ derived financial features. The core gap is that this role demands explicit pattern recognition and neural network specialization for UX personalization, while Pratik's experience is anchored in document processing, financial ML, and workflow orchestration infrastructure.",
+      "application_strategy": "Frame your multi-agent document intelligence system and credit underwriting feature pipeline as evidence of end-to-end AI engineering from research through production deployment, and acknowledge the NLP/neural network gap by pointing to your Hugging Face, LlamaIndex, and PyTorch/TensorFlow stack as foundational tools you're actively building on.",
       "profile_gaps": [
         {
           "skill": "Natural Language Processing",
-          "reason": "Uses LlamaIndex, LangChain in production and published on legal document summarization."
+          "reason": "Built document intelligence and legal summarization systems using LlamaIndex and Hugging Face, but NLP is not listed in any skill bucket."
         },
         {
           "skill": "Neural Networks",
-          "reason": "Lists PyTorch and TensorFlow but has no neural network design projects."
+          "reason": "Uses PyTorch and TensorFlow in production systems at Fincepta, but neural networks is not explicitly listed as a skill."
         },
         {
-          "skill": "Serverless Architecture",
-          "reason": "Designed serverless ETL architecture using AWS CDK, Glue, and PySpark at Fincepta."
+          "skill": "Pattern Recognition",
+          "reason": "Extracted structured data from arbitrary e-commerce storefronts in Mantis, demonstrating pattern recognition without listing it."
         },
         {
-          "skill": "Workflow Automation",
-          "reason": "Built multi-agent document intelligence system reducing analyst turnaround from 7 days to 24 hours."
+          "skill": "Data Structures",
+          "reason": "Engineered feature pipelines producing 10,000+ indicators and designed workflow orchestration systems requiring strong DS fundamentals."
+        },
+        {
+          "skill": "Algorithms",
+          "reason": "Built scenario-specific XGBoost models and designed asynchronous Temporal workflows demonstrating algorithmic problem-solving."
         }
       ],
-      "relevant_experience": "Pratik's 2.2 years as an AI Engineer at Fincepta involved production ML deployment and feature engineering at scale, demonstrating the ability to take AI systems from architecture through to operational ownership. However, his ML work has been XGBoost-focused rather than neural network-based, which creates a gap with the role's core requirement of applying pattern recognition and neural network techniques.",
+      "relevant_experience": "Pratik's 2.2 years at Fincepta involved architecting and deploying AI systems from ambiguous requirements through production, including a multi-agent document intelligence platform and a serverless ETL pipeline on AWS. This aligns with the role's emphasis on integrating AI into production-level software, though the domain focus has been financial and document-centric rather than UX personalization.",
       "focus_areas": [
-        "Build a neural network project from scratch using PyTorch (e.g., image classification or sequence model) to demonstrate deep learning competency",
-        "Develop a pattern recognition prototype using computer vision or time-series data to show core methodology understanding",
-        "Create an NLP project demonstrating end-to-end model training for text classification or summarization beyond framework usage",
-        "Study the company's client-facing applications to understand how AI features integrate into user experience and personalization"
+        "Study neural network architectures (CNNs, RNNs, Transformers) and apply them to a personalization or UX-focused project",
+        "Build a pattern recognition project involving user behavior data or image-based classification to demonstrate the core skill",
+        "Learn MLOps best practices for model monitoring, A/B testing, and continuous deployment in client-facing applications",
+        "Contribute to or publish work on NLP techniques for text classification, sentiment analysis, or recommendation systems"
       ],
       "green_flags": [
-        "Reduced analyst turnaround time from 7 days to 24 hours by designing multi-agent document intelligence system at Fincepta",
-        "Engineered feature generation pipeline producing 10,000+ derived financial indicators for credit underwriting",
-        "Built self-hosted infrastructure platform for stateful AI workloads demonstrating systems thinking and deployment capability",
-        "Production credit underwriting platform running on AWS with real-time inference shows end-to-end ML engineering"
+        "Reduced analyst turnaround from 7 days to 24 hours by designing a multi-agent document intelligence system using Agno and LlamaIndex",
+        "Engineered a feature generation pipeline producing 10,000+ derived financial indicators for real-time credit underwriting inference",
+        "Designed a serverless ETL architecture on AWS (CDK, Glue, PySpark, Redshift) enabling near real-time operational monitoring",
+        "Published research on legal document summarization at ICCCNT 2024, demonstrating academic engagement with NLP"
       ]
     },
-    "score_history": [],
-    "resume_draft": null,
-    "resume_extra_skills": [],
+    "score_history": [
+      {
+        "score": 43,
+        "date": "2026-07-19T14:58:34.231Z"
+      }
+    ],
+    "resume_draft": {
+      "summary": "Applied AI Engineer with 2+ years of production experience building and deploying machine learning models, multi-agent AI systems, and intelligent automation pipelines. Proven track record of shipping end-to-end AI solutions from research through production—reducing analyst turnaround from 7 days to 24 hours with a multi-agent document intelligence platform and engineering feature pipelines producing 10,000+ derived financial indicators. Strong foundation in PyTorch, TensorFlow, and NLP via LlamaIndex and Hugging Face, with hands-on experience integrating AI components into client-facing production applications.",
+      "skills": [
+        "Python",
+        "Machine Learning",
+        "PyTorch",
+        "TensorFlow",
+        "Scikit-Learn",
+        "Natural Language Processing",
+        "Neural Networks",
+        "Pattern Recognition",
+        "XGBoost",
+        "LlamaIndex",
+        "LangChain",
+        "Hugging Face",
+        "FastAPI",
+        "Data Structures",
+        "Algorithms",
+        "JavaScript",
+        "Docker",
+        "AWS",
+        "PostgreSQL",
+        "Git"
+      ],
+      "experience": [
+        {
+          "id": "1782322976136e0",
+          "bullets": [
+            "Designed and deployed a multi-agent document intelligence system using Agno, LlamaIndex, and Gemini, automating complex analyst workflows and reducing turnaround time from 7 days to 24 hours through intelligent pattern recognition and AI orchestration",
+            "Engineered a feature generation pipeline producing 10,000+ derived financial indicators from large-scale transaction datasets, building scenario-specific XGBoost models for real-time credit underwriting inference and automated risk assessment",
+            "Built an AI-powered PDF compliance pipeline using Gemini and Unstructured, achieving Adobe Acrobat ADA compliance validation through neural network-driven document restructuring and automated accessibility tagging"
+          ]
+        }
+      ],
+      "projects": [
+        {
+          "id": "1782322976136p0",
+          "bullets": [
+            "Architected a self-hosted infrastructure platform for stateful AI workloads using Proxmox, Docker, FastAPI, PostgreSQL, and Temporal, designing isolated service environments for orchestration, API routing, and workflow execution",
+            "Implemented secure API gateways and service-to-service communication patterns, creating a production-like environment for experimenting with distributed AI systems and workflow reliability"
+          ]
+        },
+        {
+          "id": "1782322976136p1",
+          "bullets": [
+            "Developed an AI-powered product intelligence platform extracting structured information from arbitrary e-commerce storefronts, applying pattern recognition techniques to automate monitoring, scheduling, and alerting workflows",
+            "Built fault-tolerant asynchronous extraction and notification pipelines using Temporal and LangChain for large-scale product monitoring, integrating self-hosted AI infrastructure to reduce operational costs"
+          ]
+        }
+      ],
+      "_base_skills": [
+        "Python",
+        "Machine Learning",
+        "PyTorch",
+        "TensorFlow",
+        "Scikit-Learn",
+        "XGBoost",
+        "LlamaIndex",
+        "LangChain",
+        "Hugging Face",
+        "FastAPI",
+        "Docker",
+        "AWS",
+        "PostgreSQL",
+        "Git"
+      ]
+    },
+    "resume_extra_skills": [
+      "Natural Language Processing",
+      "Neural Networks",
+      "Pattern Recognition",
+      "Data Structures",
+      "Algorithms",
+      "JavaScript",
+      "data science",
+      "Natural Language Processing (NLP)",
+      "Version Control"
+    ],
     "title": "Artificial Intelligence Engineer",
     "company": "Wormos",
     "link": "https://www.linkedin.com/jobs/view/4432124764/",
@@ -401,8 +781,8 @@
       "chars_scraped": 6300,
       "retried": false
     },
-    "last_analysis_run_id": "20260708191503-x1t10h",
-    "last_analysis_at": "2026-07-08T19:15:03.260Z",
+    "last_analysis_run_id": "20260719145834-epm9n1",
+    "last_analysis_at": "2026-07-19T14:58:34.233Z",
     "analysis_ignored_skills": []
   },
   {
