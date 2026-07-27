@@ -1203,7 +1203,83 @@ function renderProfileSections() {
     empty.classList.remove('hidden'); sections.classList.add('hidden'); return;
   }
   empty.classList.add('hidden'); sections.classList.remove('hidden');
-  sections.innerHTML = Object.keys(SECTION_META).map(renderSection).join('');
+  sections.innerHTML = renderProfileStrength(p) +
+    Object.keys(SECTION_META).map(renderSection).join('');
+}
+
+// ── Profile strength ─────────────────────────────────────────────────────────
+// Turns "is my profile any good?" into a list of specific things to go fix.
+// Score and gap list come from ONE check list on purpose — otherwise the number
+// and the advice can contradict each other (100% while listing gaps).
+// Weight reflects how much a recruiter actually reads that part.
+function profileChecks(p) {
+  const id = p.identity || {};
+  const contact = p.contact || {};
+  const exps = p.experience || [];
+  const projs = p.projects || [];
+
+  const thinExp = exps.filter(e => !(e.highlights || []).length);
+  const thinProj = projs.filter(pr => !(pr.highlights || []).length);
+  const noMetric = [...exps, ...projs].filter(item =>
+    (item.highlights || []).length && !(item.highlights || []).some(h => /\d/.test(h)));
+
+  return [
+    { ok: !!id.name, weight: 10, section: 'identity', text: 'No name set' },
+    { ok: !!id.headline, weight: 10, section: 'identity', text: 'No headline set' },
+    { ok: !!id.summary, weight: 10, section: 'identity', text: 'No summary written' },
+    { ok: !!id.location, weight: 3, section: 'identity', text: 'No location set' },
+    { ok: !!contact.email, weight: 5, section: 'contact', text: 'No email address' },
+    { ok: !!(contact.links || []).length, weight: 4, section: 'contact', text: 'No links (GitHub, LinkedIn)' },
+    { ok: !!(p.skill_buckets || []).length, weight: 10, section: 'skills', text: 'No skills listed' },
+    { ok: exps.length > 0, weight: 15, section: 'experience', text: 'No roles added' },
+    {
+      ok: !thinExp.length, weight: 10, section: 'experience',
+      text: `${thinExp.length} role${thinExp.length === 1 ? ' has' : 's have'} no bullets`,
+      hint: thinExp.map(e => e.title || 'Untitled').join(', '),
+    },
+    { ok: projs.length > 0, weight: 10, section: 'projects', text: 'No projects added' },
+    {
+      ok: !thinProj.length, weight: 8, section: 'projects',
+      text: `${thinProj.length} project${thinProj.length === 1 ? ' has' : 's have'} no bullets`,
+      hint: thinProj.map(pr => pr.name || 'Untitled').join(', '),
+    },
+    {
+      ok: !noMetric.length, weight: 10, section: 'experience',
+      text: `${noMetric.length} entr${noMetric.length === 1 ? 'y has' : 'ies have'} no numbers`,
+      hint: 'Bullets with concrete results screen better',
+    },
+    { ok: !!(p.education || []).length, weight: 5, section: 'education', text: 'No education added' },
+  ];
+}
+
+function renderProfileStrength(p) {
+  const checks = profileChecks(p);
+  const total = checks.reduce((s, c) => s + c.weight, 0);
+  const got = checks.reduce((s, c) => s + (c.ok ? c.weight : 0), 0);
+  const score = Math.round((got / total) * 100);
+  // Heaviest unmet checks first — fixing the top item moves the number most.
+  const gaps = checks.filter(c => !c.ok).sort((a, b) => b.weight - a.weight);
+  const tone = score >= 85 ? 'strong' : score >= 60 ? 'ok' : 'weak';
+  const gapHtml = gaps.length
+    ? `<div class="pstrength-gaps">${gaps.slice(0, 6).map(g => `
+        <button class="pstrength-gap" data-jump-section="${escAttr(g.section)}" title="Go to ${escAttr(g.section)}">
+          <span class="pstrength-gap-text">${escHtml(g.text)}</span>
+          ${g.hint ? `<span class="pstrength-gap-hint">${escHtml(g.hint)}</span>` : ''}
+        </button>`).join('')}
+        ${gaps.length > 6 ? `<span class="pstrength-more">+${gaps.length - 6} more</span>` : ''}
+      </div>`
+    : `<div class="pstrength-clear">Nothing missing - your profile is complete.</div>`;
+
+  return `<div class="pstrength pstrength-${tone}">
+    <div class="pstrength-head">
+      <div class="pstrength-score">
+        <span class="pstrength-num">${score}<span class="pstrength-pct">%</span></span>
+        <span class="pstrength-label">Profile strength</span>
+      </div>
+      <div class="pstrength-bar"><div class="pstrength-fill" style="width:${score}%"></div></div>
+    </div>
+    ${gapHtml}
+  </div>`;
 }
 
 function renderSection(name) {
@@ -1241,9 +1317,14 @@ const SECTION_VIEWS = {
     const id = p.identity || {};
     if (!id.name && !id.headline && !id.summary)
       return psEmpty('No identity info - click Edit to add.');
+    const variants = (id.headline_variants || []).filter(v => v && v !== id.headline);
     return `
         ${id.name     ? `<div class="ps-name">${escHtml(id.name)}</div>` : ''}
         ${id.headline ? `<div class="ps-headline">${escHtml(id.headline)}</div>` : ''}
+        ${variants.length ? `<div class="hv-view-row">
+          <span class="hv-view-count">${variants.length} other headline${variants.length > 1 ? 's' : ''} saved</span>
+          <button class="ps-btn-ghost hv-view-btn" id="btn-headline-manage">Switch</button>
+        </div>` : ''}
         ${id.location ? `<div class="ps-meta-row"><sl-icon library="lucide" name="map-pin"></sl-icon>${escHtml(id.location)}</div>` : ''}
         ${id.summary  ? `<p class="ps-summary">${escHtml(id.summary)}</p>` : ''}`;
   },
@@ -1342,11 +1423,22 @@ function psEmpty(msg) {
 const SECTION_EDITS = {
   identity: (p) => {
     const id = p.identity || {};
+    const variants = id.headline_variants || [];
     return `
         <div class="form-field"><label class="field-label">Name</label>
           <input class="field-input" data-field="name" value="${escAttr(id.name||'')}"/></div>
-        <div class="form-field"><label class="field-label">Headline</label>
-          <input class="field-input" data-field="headline" value="${escAttr(id.headline||'')}"/></div>
+        <div class="form-field">
+          <label class="field-label">Headline</label>
+          <input class="field-input" data-field="headline" id="headline-active-input" value="${escAttr(id.headline||'')}"/>
+          <div class="hv-toolbar">
+            <button class="ps-btn-ghost" id="btn-headline-generate" title="Suggest headline options based on your experience and skills (uses AI)">
+              <sl-icon library="lucide" name="sparkles"></sl-icon> Suggest headlines
+            </button>
+            <button class="ps-btn-ghost" id="btn-headline-save-current" title="Keep the current headline in your saved list so you can switch back to it">Save this one</button>
+          </div>
+          <div id="headline-variants-list" class="hv-list">${renderHeadlineVariants(variants, id.headline)}</div>
+          <div id="headline-status" class="gen-status hidden"></div>
+        </div>
         <div class="form-field"><label class="field-label">Location</label>
           <input class="field-input" data-field="location" value="${escAttr(id.location||'')}"/></div>
         <div class="form-field"><label class="field-label">Summary</label>
@@ -1434,6 +1526,213 @@ function renderSectionEdit(name) {
   return fn ? fn(state.profile) : '';
 }
 
+// ── Headline variations ──────────────────────────────────────────────────────
+// One headline is active (identity.headline); the rest live in
+// identity.headline_variants so you can keep angles for different role types
+// and switch without rewriting.
+function renderHeadlineVariants(variants, active) {
+  const list = (variants || []).filter(Boolean);
+  if (!list.length) return '';
+  return list.map((v, i) => `
+    <div class="hv-row ${v === active ? 'is-active' : ''}">
+      <button class="hv-use" data-hv-use="${i}" title="${v === active ? 'Currently in use' : 'Use this headline'}">
+        ${v === active ? '<sl-icon library="lucide" name="check"></sl-icon>' : ''}
+      </button>
+      <span class="hv-text">${escHtml(v)}</span>
+      <button class="hv-remove ps-btn-icon" data-hv-remove="${i}" title="Remove">×</button>
+    </div>`).join('');
+}
+
+function refreshHeadlineVariantsUI() {
+  const el = document.getElementById('headline-variants-list');
+  if (!el) return;
+  const id = state.profile.identity || {};
+  const activeInput = document.getElementById('headline-active-input');
+  el.innerHTML = renderHeadlineVariants(id.headline_variants, activeInput ? activeInput.value : id.headline);
+}
+
+function saveCurrentHeadlineAsVariant() {
+  const input = document.getElementById('headline-active-input');
+  const value = (input?.value || '').trim();
+  if (!value) { showToast('Write a headline first.'); return; }
+  const id = state.profile.identity = state.profile.identity || {};
+  id.headline_variants = id.headline_variants || [];
+  if (id.headline_variants.includes(value)) { showToast('Already saved.'); return; }
+  id.headline_variants.push(value);
+  refreshHeadlineVariantsUI();
+  showToast('Headline saved to your list.');
+}
+
+function useHeadlineVariant(idx) {
+  const id = state.profile.identity || {};
+  const value = (id.headline_variants || [])[idx];
+  if (!value) return;
+  const input = document.getElementById('headline-active-input');
+  if (input) input.value = value;
+  refreshHeadlineVariantsUI();
+}
+
+function removeHeadlineVariant(idx) {
+  const id = state.profile.identity || {};
+  (id.headline_variants || []).splice(idx, 1);
+  refreshHeadlineVariantsUI();
+}
+
+async function generateHeadlines() {
+  const btn = document.getElementById('btn-headline-generate');
+  const status = document.getElementById('headline-status');
+  if (btn) { btn.disabled = true; }
+  if (status) {
+    status.textContent = 'Writing headline options…';
+    status.classList.remove('hidden');
+  }
+  try {
+    const p = state.profile || {};
+    const prompt =
+      `CANDIDATE PROFILE:\n${JSON.stringify({
+        identity: p.identity,
+        skill_buckets: p.skill_buckets,
+        experience: (p.experience || []).map(e => ({
+          title: e.title, company: e.company, highlights: e.highlights,
+        })),
+        projects: (p.projects || []).map(pr => ({
+          name: pr.name, description: pr.description, tech: pr.tech,
+        })),
+      }, null, 2)}\n\nGenerate headline options for this candidate.`;
+    const result = await runAgentToFile('headline-writer', prompt);
+    const fresh = (result?.headlines || []).filter(h => typeof h === 'string' && h.trim());
+    if (!fresh.length) throw new Error('No headlines returned');
+    const id = state.profile.identity = state.profile.identity || {};
+    id.headline_variants = [...new Set([...(id.headline_variants || []), ...fresh])];
+    refreshHeadlineVariantsUI();
+    if (status) status.classList.add('hidden');
+    showToast(`Added ${fresh.length} headline options - click one to use it.`);
+  } catch (e) {
+    if (status) status.textContent = `Could not generate headlines: ${e.message}`;
+    showToast('Headline generation failed.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ── Write with AI ────────────────────────────────────────────────────────────
+// You brain-dump into the description box in whatever words come out; this
+// turns that into resume bullets. Nothing is applied until you accept it, and
+// the raw text is always preserved so you can re-run with more detail later.
+let _aiDraft = null;   // { kind, idx, result } awaiting accept/discard
+
+async function writeWithAI(kind, idx) {
+  const wrap = document.querySelector(`.${kind === 'experience' ? 'exp' : 'proj'}-item-edit[data-idx="${idx}"]`);
+  if (!wrap) return;
+  const rawEl = wrap.querySelector('[data-field="raw_description"]');
+  const raw = (rawEl?.value || '').trim();
+  if (raw.length < 40) {
+    showToast('Write a bit more in the description first - a sentence or two at minimum.');
+    return;
+  }
+
+  const btn = wrap.querySelector('.ai-write-btn');
+  const panel = wrap.querySelector('.ai-draft-panel');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<sl-spinner style="font-size:12px"></sl-spinner> Writing…'; }
+  if (panel) {
+    panel.classList.remove('hidden');
+    panel.innerHTML = `<div class="ai-draft-loading"><div class="app-spin"></div> Turning your notes into resume bullets…</div>`;
+  }
+
+  try {
+    const context = kind === 'experience'
+      ? `ROLE: ${wrap.querySelector('[data-field="title"]')?.value || ''} at ${wrap.querySelector('[data-field="company"]')?.value || ''}`
+      : `PROJECT: ${wrap.querySelector('[data-field="name"]')?.value || ''}`;
+    const prompt = `KIND: ${kind}\n${context}\n\nRAW NOTES FROM THE CANDIDATE:\n${raw}\n\n` +
+      `Turn these notes into resume content.`;
+    const result = await runAgentToFile('profile-writer', prompt);
+    _aiDraft = { kind, idx, result };
+    renderAIDraftPanel(wrap, kind, result);
+  } catch (e) {
+    if (panel) panel.innerHTML = `<div class="ai-draft-error">Couldn't write that up: ${escHtml(e.message)}</div>`;
+    showToast('AI writing failed - try again.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<sl-icon library="lucide" name="sparkles"></sl-icon> Write with AI'; }
+  }
+}
+
+function renderAIDraftPanel(wrap, kind, result) {
+  const panel = wrap.querySelector('.ai-draft-panel');
+  if (!panel) return;
+  const bullets = (result.highlights || []).filter(Boolean);
+  const tech = (result.tech || []).filter(Boolean);
+  const tags = (result.tags || []).filter(Boolean);
+
+  panel.innerHTML = `
+    <div class="ai-draft-head">
+      <span class="ai-draft-title"><sl-icon library="lucide" name="sparkles"></sl-icon> Suggested</span>
+      <span class="ai-draft-note">Review before applying - your notes stay as they are.</span>
+    </div>
+    ${result.description ? `
+      <div class="ai-draft-block">
+        <div class="ai-draft-label">Summary line</div>
+        <div class="ai-draft-value">${escHtml(result.description)}</div>
+      </div>` : ''}
+    ${bullets.length ? `
+      <div class="ai-draft-block">
+        <div class="ai-draft-label">Bullets</div>
+        <ul class="ai-draft-bullets">${bullets.map(b => `<li>${escHtml(b)}</li>`).join('')}</ul>
+      </div>` : ''}
+    ${tech.length ? `
+      <div class="ai-draft-block">
+        <div class="ai-draft-label">Tech</div>
+        <div class="chips">${tech.map(t => `<span class="chip">${escHtml(t)}</span>`).join('')}</div>
+      </div>` : ''}
+    ${tags.length ? `
+      <div class="ai-draft-block">
+        <div class="ai-draft-label">Tags</div>
+        <div class="chips">${tags.map(t => `<span class="chip chip-tag">${escHtml(t)}</span>`).join('')}</div>
+      </div>` : ''}
+    <div class="ai-draft-actions">
+      <button class="ai-apply-btn ai-draft-apply" data-ai-apply="${kind}:${wrap.dataset.idx}">Apply</button>
+      <button class="ps-btn-ghost ai-draft-discard">Discard</button>
+    </div>`;
+}
+
+// Writes the accepted draft into the live edit form (not straight to disk) so
+// the normal Save/Cancel flow still governs whether it is persisted.
+function applyAIDraft(kind, idx) {
+  if (!_aiDraft || _aiDraft.kind !== kind || String(_aiDraft.idx) !== String(idx)) return;
+  const wrap = document.querySelector(`.${kind === 'experience' ? 'exp' : 'proj'}-item-edit[data-idx="${idx}"]`);
+  if (!wrap) return;
+  const r = _aiDraft.result;
+
+  if (kind === 'projects' && r.description) {
+    const descInput = wrap.querySelector('[data-field="description"]');
+    if (descInput) descInput.value = r.description;
+  }
+
+  const bullets = (r.highlights || []).filter(Boolean);
+  if (bullets.length) {
+    const editor = wrap.querySelector('.highlights-editor');
+    if (editor) {
+      editor.innerHTML = bullets.map(h =>
+        `<div class="highlight-row"><input class="field-input highlight-text" value="${escAttr(h)}"/><button class="ps-remove-highlight ps-btn-icon">×</button></div>`
+      ).join('');
+    }
+  }
+
+  if (kind === 'projects') {
+    const techWrap = wrap.querySelector('.skill-chips-edit');
+    for (const t of (r.tech || []).filter(Boolean)) {
+      if (techWrap && !techWrap.querySelector(`[data-skill="${CSS.escape(t)}"]`)) addSkillChip(techWrap, t);
+    }
+  }
+  const tagWrap = wrap.querySelector('.tag-chips-edit');
+  for (const t of (r.tags || []).filter(Boolean)) {
+    if (tagWrap && !tagWrap.querySelector(`[data-tag="${CSS.escape(t)}"]`)) addTagChip(tagWrap, t);
+  }
+
+  wrap.querySelector('.ai-draft-panel')?.classList.add('hidden');
+  _aiDraft = null;
+  showToast('Applied - remember to Save the section.');
+}
+
 function renderBucketEdit(bucket, idx) {
   return `<div class="skill-bucket-edit" data-bucket-idx="${idx}">
     <div class="skill-bucket-edit-header">
@@ -1463,9 +1762,18 @@ function renderExpItemEdit(exp, idx) {
       <div class="form-field"><label class="field-label">End</label>
         <input class="field-input" data-field="end" value="${escAttr(exp.end||'Present')}"/></div>
     </div>
-    <div class="form-field"><label class="field-label">Technical description <span class="field-optional">(architecture, tools, scale - feeds future composition)</span></label>
-      <textarea class="field-input field-textarea-tall" data-field="raw_description">${escHtml(exp.raw_description||'')}</textarea></div>
-    <div class="form-field"><label class="field-label">ATS bullets <span class="field-optional">(Action verb + impact/metric)</span></label>
+    <div class="form-field">
+      <label class="field-label">What you did here <span class="field-optional">(just talk it out - detail, tools, scale, anything)</span></label>
+      <textarea class="field-input field-textarea-tall" data-field="raw_description">${escHtml(exp.raw_description||'')}</textarea>
+      <div class="ai-write-row">
+        <button class="ps-btn-ghost ai-write-btn" data-ai-write="experience:${idx}" title="Turn these notes into resume bullets (uses AI)">
+          <sl-icon library="lucide" name="sparkles"></sl-icon> Write with AI
+        </button>
+        <span class="ai-write-hint">Your notes are kept - this only fills in the bullets below.</span>
+      </div>
+      <div class="ai-draft-panel hidden"></div>
+    </div>
+    <div class="form-field"><label class="field-label">Resume bullets <span class="field-optional">(action verb + result)</span></label>
       <div class="highlights-editor">
         ${(exp.highlights||[]).map(h=>`<div class="highlight-row"><input class="field-input highlight-text" value="${escAttr(h)}"/><button class="ps-remove-highlight ps-btn-icon">×</button></div>`).join('')}
       </div>
@@ -1492,15 +1800,24 @@ function renderProjItemEdit(proj, idx) {
       <input class="field-input" data-field="description" value="${escAttr(proj.description||'')}"/></div>
     <div class="form-field"><label class="field-label">URL <span class="field-optional">(optional)</span></label>
       <input class="field-input" data-field="url" value="${escAttr(proj.url||'')}"/></div>
-    <div class="form-field"><label class="field-label">Technical description <span class="field-optional">(architecture, design decisions, scale - feeds future composition)</span></label>
-      <textarea class="field-input field-textarea-tall" data-field="raw_description">${escHtml(proj.raw_description||'')}</textarea></div>
+    <div class="form-field">
+      <label class="field-label">What this project is <span class="field-optional">(just talk it out - what it does, how you built it, anything)</span></label>
+      <textarea class="field-input field-textarea-tall" data-field="raw_description">${escHtml(proj.raw_description||'')}</textarea>
+      <div class="ai-write-row">
+        <button class="ps-btn-ghost ai-write-btn" data-ai-write="projects:${idx}" title="Turn these notes into a summary line and resume bullets (uses AI)">
+          <sl-icon library="lucide" name="sparkles"></sl-icon> Write with AI
+        </button>
+        <span class="ai-write-hint">Your notes are kept - this fills in the summary, bullets and tech.</span>
+      </div>
+      <div class="ai-draft-panel hidden"></div>
+    </div>
     <div class="form-field"><label class="field-label">Tech stack</label>
       <div class="skill-chips-edit">
         ${(proj.tech||[]).map(t=>`<span class="skill-chip-tag" data-skill="${escAttr(t)}">${escHtml(t)}<button class="skill-chip-remove">×</button></span>`).join('')}
         <input class="skill-add-input" placeholder="Add tech, press Enter"/>
       </div>
     </div>
-    <div class="form-field"><label class="field-label">ATS bullets <span class="field-optional">(Action verb + impact/metric)</span></label>
+    <div class="form-field"><label class="field-label">Resume bullets <span class="field-optional">(action verb + result)</span></label>
       <div class="highlights-editor">
         ${(proj.highlights||[]).map(h=>`<div class="highlight-row"><input class="field-input highlight-text" value="${escAttr(h)}"/><button class="ps-remove-highlight ps-btn-icon">×</button></div>`).join('')}
       </div>
@@ -1544,13 +1861,22 @@ function collectSectionData(name) {
   const body = document.querySelector(`.profile-section[data-section="${name}"] .ps-body`);
   if (!body) return null;
   switch (name) {
-    case 'identity':
+    case 'identity': {
+      const headline = body.querySelector('[data-field="headline"]').value.trim();
+      // Variants live on state (mutated by the headline controls, which don't
+      // round-trip through the DOM); keep the active one in the list too.
+      const variants = [...new Set([
+        ...((state.profile.identity || {}).headline_variants || []),
+        ...(headline ? [headline] : []),
+      ])].filter(Boolean);
       return {
         name:     body.querySelector('[data-field="name"]').value.trim(),
-        headline: body.querySelector('[data-field="headline"]').value.trim(),
+        headline,
         summary:  body.querySelector('[data-field="summary"]').value.trim(),
         location: body.querySelector('[data-field="location"]').value.trim(),
+        headline_variants: variants,
       };
+    }
     case 'contact':
       return {
         email: body.querySelector('[data-field="email"]').value.trim(),
@@ -4351,6 +4677,41 @@ function wire() {
   // Profile tab - section edit/save/cancel (event delegation)
   const ps = document.getElementById('profile-sections');
   ps.addEventListener('click', e => {
+    // AI + headline controls first — some share styling classes with the
+    // generic section buttons below and must not fall through to them.
+    const aiWrite = e.target.closest('[data-ai-write]');
+    if (aiWrite) {
+      const [kind, idx] = aiWrite.dataset.aiWrite.split(':');
+      writeWithAI(kind, idx);
+      return;
+    }
+    const aiApply = e.target.closest('[data-ai-apply]');
+    if (aiApply) {
+      const [kind, idx] = aiApply.dataset.aiApply.split(':');
+      applyAIDraft(kind, idx);
+      return;
+    }
+    if (e.target.closest('.ai-draft-discard')) {
+      e.target.closest('.ai-draft-panel')?.classList.add('hidden');
+      _aiDraft = null;
+      return;
+    }
+    if (e.target.closest('#btn-headline-generate'))     { generateHeadlines(); return; }
+    if (e.target.closest('#btn-headline-save-current')) { saveCurrentHeadlineAsVariant(); return; }
+    if (e.target.closest('#btn-headline-manage'))       { editSection('identity'); return; }
+    const hvUse = e.target.closest('[data-hv-use]');
+    if (hvUse) { useHeadlineVariant(Number(hvUse.dataset.hvUse)); return; }
+    const hvRemove = e.target.closest('[data-hv-remove]');
+    if (hvRemove) { removeHeadlineVariant(Number(hvRemove.dataset.hvRemove)); return; }
+    const jump = e.target.closest('[data-jump-section]');
+    if (jump) {
+      const target = jump.dataset.jumpSection;
+      document.querySelector(`.profile-section[data-section="${target}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      editSection(target);
+      return;
+    }
+
     if (e.target.closest('.ps-edit-btn'))   { editSection(e.target.closest('[data-section]').dataset.section); return; }
     if (e.target.closest('.ps-save-btn'))   { saveSection(e.target.closest('[data-section]').dataset.section); return; }
     if (e.target.closest('.ps-cancel-btn')) { cancelSection(e.target.closest('[data-section]').dataset.section); return; }
