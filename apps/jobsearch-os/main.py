@@ -16,15 +16,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
 
 from agentos import run, AppConfig, WorkspaceFolder
 
-from bridge import JobSearchBridge
-
 
 APP = AppConfig(
     app_id="jobsearch-os",
     app_title="CareerForge",
     app_root=Path(__file__).resolve().parent,
     ui_dir="ui",                      # this app ships its own front-end
-    bridge_cls=JobSearchBridge,        # adds the embedded application browser
     workspace_dirname="workspace",
     workspace_folders=(
         WorkspaceFolder("documents", "file-text", "documents"),
