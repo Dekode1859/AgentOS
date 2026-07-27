@@ -5,7 +5,7 @@
 
 import { api } from '../api.js';
 import { icon, formatIcon } from '../icons.js';
-import { escHtml, escAttr, relTime, fmtNumber, statusBadge, emptyState, spinner, toast } from '../ui.js';
+import { escHtml, escAttr, relTime, fmtNumber, statusBadge, emptyState, spinner, toast, confirmDialog } from '../ui.js';
 import { state, on, navigate, refreshData, pickFiles, runImportUrl, openImportModal } from '../main.js';
 
 let offData = null;
@@ -38,17 +38,17 @@ function knowledgeCard() {
         <h2>${active ? spinner() : icon('sparkles')}Knowledge Build</h2>
         <div class="kb-actions">
           ${c.failed ? `<button class="btn btn-ghost btn-sm" id="kb-retry">${icon('refresh-cw')}Retry ${c.failed} failed</button>` : ''}
-          ${(reg.total || 0) > (reg.enriched || 0) ? `<button class="btn btn-ghost btn-sm" id="kb-enrich"${active ? ' disabled' : ''}>${icon('sparkles')}Enrich ${(reg.total || 0) - (reg.enriched || 0)}</button>` : ''}
-          <button class="btn btn-primary btn-sm" id="kb-rebuild"${active ? ' disabled' : ''}>${icon('zap')}Rebuild all</button>
+          ${(reg.total || 0) > (reg.enriched || 0) ? `<button class="btn btn-ghost btn-sm" id="kb-enrich"${active ? ' disabled' : ''} title="New sources enrich automatically — this only catches up entities from before that existed">${icon('sparkles')}Catch up ${(reg.total || 0) - (reg.enriched || 0)}</button>` : ''}
+          <button class="btn btn-ghost btn-sm" id="kb-rebuild"${active ? ' disabled' : ''} title="Re-index and re-enrich every source from scratch">${icon('zap')}Rebuild all</button>
         </div>
       </div>
+      <p class="kb-auto-note">${icon('info')}New sources index, get related, and get enriched automatically — nothing here is required.</p>
       <div class="kb-pills">
         ${pill('circle-check', 'indexed', s.indexed || 0, 'ok')}
         ${pill('clock', 'stale', s.stale || 0, (s.stale ? 'warn' : ''))}
         ${pill('inbox', 'unindexed', s.unindexed || 0)}
         ${pill('hash', 'entities', reg.total || 0, 'accent')}
         ${pill('book-open', 'enriched', reg.enriched || 0, ((reg.enriched || 0) === (reg.total || 0) && reg.total ? 'ok' : ''))}
-        ${reg.flagged ? pill('circle-alert', 'to review', reg.flagged, 'warn') : ''}
         <span class="kb-sep"></span>
         ${c.running ? pill('loader', 'running', c.running, 'accent') : ''}
         ${c.queued ? pill('clock', 'queued', c.queued) : ''}
@@ -59,6 +59,18 @@ function knowledgeCard() {
 
 function wireKnowledgeCard(root) {
   root.querySelector('#kb-rebuild')?.addEventListener('click', async () => {
+    const total = (state.overview?.processed_count) || 0;
+    const confirmed = await confirmDialog({
+      title: 'Rebuild the entire knowledge base?',
+      bodyHtml: `<p>This re-indexes and re-enriches <strong>every</strong> processed source from
+        scratch — one model call per source plus one per entity. For ${total || 'your'}
+        source${total === 1 ? '' : 's'} that can mean a lot of token usage and take a while.</p>
+        <p>New sources already do this automatically as you import them — you only need this
+        to refresh everything after changing how indexing works, not for routine use.</p>`,
+      confirmLabel: 'Rebuild everything',
+      danger: true,
+    });
+    if (!confirmed) return;
     try {
       const result = await api.rebuildAll();
       toast('ok', `Queued ${result.queued || 0} source${result.queued === 1 ? '' : 's'} for indexing.`);

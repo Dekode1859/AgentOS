@@ -6,41 +6,44 @@ each). The Curator is the *only* thing that reads all manifests and writes the
 shared, canonical layer:
 
 - ``wiki/.lexicon/entities.json`` — the canonical entity registry
-- ``wiki/.lexicon/relations.json`` — labeled, typed relations between entities
+- ``wiki/.lexicon/relations.json`` — relations between entities, each with a
+  grounded, natural-language reason
 - ``wiki/entities/<type>/<slug>.md`` — one durable page per canonical entity
-- ``wiki/indexes/entities.md`` — a typed index of every entity
+- ``wiki/indexes/entities.md`` — a self-sufficient metadata index: enough
+  about every entity (description + per-source mentions) to answer questions
+  from the index alone, without opening every entity page
 
-Two judgement calls belong to the Indexer, not here: which extracted things are
-real, reusable concepts (``scope == "general"``) versus a document's own
-internal jargon (``scope == "local"``), and *why* two entities relate (a typed,
-evidence-backed relation) rather than merely that they co-occurred. The Curator
-only promotes ``general`` entities to canonical pages, and only records
-relations the Indexer actually asserted between two such entities — so the graph
-reflects understanding, not "these words appeared in the same file."
+Everything semantic is the Indexer/Enricher's judgement call, never ours:
+which extracted things are real, reusable concepts (``scope == "general"``)
+versus a document's own internal jargon (``scope == "local"``); what an
+entity's *type* is (a free label, not a fixed enum we maintain); and *why* two
+entities relate (a one-sentence, evidence-backed explanation — never a coded
+relation type with no reason attached). The Curator only promotes ``general``
+entities to canonical pages, and only records relations the Indexer actually
+explained between two such entities — so the graph reflects understanding,
+not "these words appeared in the same file."
 
-Merging is otherwise fully deterministic (no LLM): entities merge by normalized
-name *within the same type*; the same name under a different type stays separate
-and both are flagged ambiguous. Entity pages are derived artifacts, regenerated
-from the registry every pass, so they never drift from the evidence. External
-enrichment (a later LLM stage) lives in each entity's ``enrichment`` object in
-the registry and is merged into the page, so regeneration preserves it.
+Merging is otherwise fully deterministic (no LLM): entities merge by
+normalized *name* alone — never partitioned by type, since the same real
+thing can get a slightly different type label from different indexing runs.
+A canonical ``type`` is chosen by majority vote across every mention. Entity
+pages are derived artifacts, regenerated from the registry every pass, so
+they never drift from the evidence. External enrichment (a later LLM stage)
+lives in each entity's ``enrichment`` object in the registry and is merged
+into the page, so regeneration preserves it.
 """
 from __future__ import annotations
 
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, UTC
 from pathlib import Path
 
 from source_pipeline import slugify
 
-ENTITY_TYPES = ("concept", "tool", "framework", "library", "person", "topic")
-RELATION_TYPES = (
-    "used_for", "depends_on", "part_of", "implements", "alternative_to",
-    "produces", "consumes", "runs_on", "defined_by", "related_to",
-)
-_EVIDENCE_CAP = 6
+_EVIDENCE_CAP = 8
 _RELATION_CAP = 30
+_DEFAULT_TYPE = "topic"
 
 
 def _iso_now() -> str:
@@ -48,8 +51,10 @@ def _iso_now() -> str:
 
 
 def _norm_type(value: str) -> str:
+    # No fixed enum: whatever label the Indexer chose, lightly normalized so
+    # "Library" / "library" / " library " merge into one folder/bucket.
     candidate = str(value or "").strip().lower()
-    return candidate if candidate in ENTITY_TYPES else "topic"
+    return candidate or _DEFAULT_TYPE
 
 
 def _norm_scope(value: str) -> str:
@@ -57,17 +62,8 @@ def _norm_scope(value: str) -> str:
     return "local" if str(value or "").strip().lower() == "local" else "general"
 
 
-def _norm_rel_type(value: str) -> str:
-    candidate = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
-    return candidate if candidate in RELATION_TYPES else "related_to"
-
-
-def _humanize_rel(rel_type: str) -> str:
-    return rel_type.replace("_", " ")
-
-
-def _entity_id(entity_type: str, name: str) -> str:
-    return f"{entity_type}--{slugify(name, fallback='entity')}"
+def _entity_id(name: str) -> str:
+    return slugify(name, fallback="entity")
 
 
 class Curator:
@@ -90,9 +86,8 @@ class Curator:
         self._write_registry(registry)
         self._write_relations(relations)
         pages = self._write_entity_pages(registry, relations)
-        self._write_entity_index(registry)
+        self._write_entity_index(registry, relations)
 
-        flagged = sum(1 for e in registry.values() if e["flags"])
         enriched = sum(1 for e in registry.values() if (e.get("enrichment") or {}).get("description"))
         by_type: dict[str, int] = defaultdict(int)
         for entity in registry.values():
@@ -102,7 +97,6 @@ class Curator:
             "entities": len(registry),
             "relations": len(relations),
             "pages_written": pages,
-            "flagged": flagged,
             "enriched": enriched,
             "by_type": dict(by_type),
         }
@@ -160,7 +154,6 @@ class Curator:
                 "page": entity.get("page", ""),
                 "source_count": len(entity.get("sources", [])),
                 "enriched": is_enriched,
-                "flags": entity.get("flags", []),
             })
         return {
             "ok": True, "entities": entities, "by_type": dict(by_type),
@@ -171,7 +164,7 @@ class Curator:
 
     def _merge(self, manifests: list[dict], previous: dict) -> tuple[dict, list[dict]]:
         registry: dict[str, dict] = {}
-        slug_types: dict[str, set[str]] = defaultdict(set)
+        type_votes: dict[str, Counter] = defaultdict(Counter)
 
         # ── Pass 1: canonical entities (general scope only) ──────────────────
         for manifest in manifests:
@@ -183,21 +176,18 @@ class Curator:
                 name = str(candidate.get("name", "")).strip()
                 if not name or _norm_scope(candidate.get("scope")) != "general":
                     continue                       # local jargon never gets a page
-                entity_type = _norm_type(candidate.get("type"))
-                eid = _entity_id(entity_type, name)
-                slug_types[slugify(name, fallback="entity")].add(entity_type)
+                eid = _entity_id(name)
+                type_votes[eid][_norm_type(candidate.get("type"))] += 1
 
                 entity = registry.get(eid)
                 if not entity:
                     entity = {
                         "id": eid,
-                        "name": name,
-                        "type": entity_type,
+                        "name": name,               # first-seen casing wins
+                        "type": "",                 # filled after all votes are in
                         "aliases": set(),
-                        "sources": {},          # source_id -> evidence record
-                        "page": f"entities/{entity_type}/{slugify(name, fallback='entity')}.md",
+                        "sources": {},               # source_id -> mention record
                         "enrichment": (previous.get(eid, {}) or {}).get("enrichment", {}) or {},
-                        "flags": [],
                     }
                     registry[eid] = entity
 
@@ -206,17 +196,22 @@ class Curator:
                     if alias and slugify(alias) != slugify(name):
                         entity["aliases"].add(alias)
 
+                # One entry per source: a synthesized one-sentence account of
+                # how *this* source specifically mentions/uses the entity —
+                # this is what powers the page's "Sources" section, one bullet
+                # per source, not a single blended description.
                 entity["sources"].setdefault(source_id, {
                     "source_id": source_id,
                     "title": title,
                     "note_page": note_page,
-                    "evidence": str(candidate.get("evidence", "")).strip(),
+                    "summary": str(candidate.get("evidence", "")).strip(),
                 })
 
-        # Ambiguity: same normalized name across >1 type — keep separate, flag both.
-        for entity in registry.values():
-            if len(slug_types[slugify(entity["name"], fallback="entity")]) > 1:
-                entity["flags"].append("ambiguous-type")
+        # Canonical type = majority vote across every mention of this entity;
+        # ties break toward whichever type was recorded first.
+        for eid, entity in registry.items():
+            entity["type"] = type_votes[eid].most_common(1)[0][0]
+            entity["page"] = f"entities/{entity['type']}/{slugify(entity['name'], fallback='entity')}.md"
 
         # Name/alias → id lookup, so relations declared by name resolve to the
         # canonical entity (and relations touching un-promoted local terms drop).
@@ -226,22 +221,25 @@ class Curator:
             for alias in entity["aliases"]:
                 name_to_id.setdefault(slugify(alias, fallback="entity"), entity["id"])
 
-        # ── Pass 2: labeled relations (both endpoints must be general) ───────
-        rel_map: dict[tuple[str, str, str], dict] = {}
+        # ── Pass 2: relations, each carrying a grounded, one-sentence reason ──
+        # Keyed by the directed (from, to) pair only — no coded relation type.
+        # A relation with no usable explanation is not worth recording at all.
+        rel_map: dict[tuple[str, str], dict] = {}
         for manifest in manifests:
             source_id = manifest.get("source_id", "")
             for rel in manifest.get("relations", []):
+                explanation = str(rel.get("explanation", "")).strip()
+                if not explanation:
+                    continue
                 fid = name_to_id.get(slugify(str(rel.get("from", "")), fallback="entity"))
                 tid = name_to_id.get(slugify(str(rel.get("to", "")), fallback="entity"))
                 if not fid or not tid or fid == tid:
                     continue
-                rtype = _norm_rel_type(rel.get("type"))
-                key = (fid, tid, rtype)
-                entry = rel_map.setdefault(
-                    key, {"evidence": str(rel.get("evidence", "")).strip(), "sources": set()})
+                key = (fid, tid)
+                entry = rel_map.setdefault(key, {"explanation": explanation, "sources": set()})
                 entry["sources"].add(source_id)
-                if not entry["evidence"] and rel.get("evidence"):
-                    entry["evidence"] = str(rel["evidence"]).strip()
+                if not entry["explanation"]:
+                    entry["explanation"] = explanation
 
         # Freeze sets → sorted lists for stable, serializable output.
         for entity in registry.values():
@@ -249,16 +247,16 @@ class Curator:
             entity["sources"] = list(entity["sources"].values())
 
         relations = [
-            {"from": f, "to": t, "type": rtype,
-             "evidence": entry["evidence"], "sources": sorted(entry["sources"])}
-            for (f, t, rtype), entry in sorted(rel_map.items())
+            {"from": f, "to": t, "explanation": entry["explanation"], "sources": sorted(entry["sources"])}
+            for (f, t), entry in sorted(rel_map.items())
         ]
         return registry, relations
 
     # ── Entity pages ─────────────────────────────────────────────────────────
 
     def _write_entity_pages(self, registry: dict, relations: list[dict]) -> int:
-        # Rebuild the entities/ tree from scratch so deleted entities don't linger.
+        # Rebuild the entities/ tree from scratch so deleted entities (and
+        # entities whose canonical type/folder shifted) don't leave stragglers.
         if self._entities_dir.exists():
             for path in self._entities_dir.rglob("*.md"):
                 try:
@@ -267,8 +265,6 @@ class Curator:
                     pass
 
         by_id = {e["id"]: e for e in registry.values()}
-        # Group relations by the entity on each end, keeping direction so the
-        # page can phrase them naturally ("used for → X" vs "X → depends on").
         rels_out: dict[str, list[dict]] = defaultdict(list)
         rels_in: dict[str, list[dict]] = defaultdict(list)
         for rel in relations:
@@ -291,76 +287,99 @@ class Curator:
         enrichment = entity.get("enrichment") or {}
         depth = entity["page"].count("/")          # entities/<type>/<slug>.md → 2
         up = "../" * depth
-        lines = [f"# {name}", "", f"**Type:** {entity['type']}"]
-        if entity["aliases"]:
-            lines.append(f"**Also known as:** {', '.join(entity['aliases'])}")
-        if "ambiguous-type" in entity["flags"]:
-            lines.append("")
-            lines.append("> ⚠ This name appears under more than one entity type across your "
-                         "sources. Review whether these should stay separate.")
 
-        # What it is — prefer the LLM's general-knowledge definition; fall back
-        # to the strongest source snippet if this entity hasn't been enriched.
-        lines += ["", "## What it is"]
+        # The description is the very first thing on the page — a general,
+        # internet-common definition, not a source snippet. Until an entity
+        # has been enriched, say so plainly rather than faking a description
+        # out of one source's evidence.
+        lines = [f"# {name}", ""]
         if enrichment.get("description"):
             lines.append(enrichment["description"].strip())
         else:
-            evidence = [s["evidence"] for s in entity["sources"] if s.get("evidence")]
-            lines.append(evidence[0] if evidence
-                         else "_Not enriched yet — no general description available._")
+            lines.append("_Not enriched yet — no general description available._")
+        lines.append("")
+        lines.append(f"*{entity['type']}*" + (f" · also known as {', '.join(entity['aliases'])}"
+                     if entity["aliases"] else ""))
 
-        # Relationships — typed and directional, so "Pydantic used for data
-        # validation" reads as a claim, not "these two share a document."
-        rel_lines: list[str] = []
-        for rel in rels_out.get(entity["id"], [])[:_RELATION_CAP]:
-            target = by_id.get(rel["to"])
-            if target:
-                rel_lines.append(f"- **{_humanize_rel(rel['type'])}** → [[{target['name']}]]")
-        for rel in rels_in.get(entity["id"], [])[:_RELATION_CAP]:
-            source = by_id.get(rel["from"])
-            if source:
-                rel_lines.append(f"- [[{source['name']}]] **{_humanize_rel(rel['type'])}** this")
-        if rel_lines:
-            lines += ["", "## Relationships", *rel_lines]
-
-        lines += ["", "## How it appears in imported sources"]
+        # Sources — one bullet per source, each a short account of how *that*
+        # source specifically mentions or uses the entity.
+        lines += ["", "## Sources"]
         for src in entity["sources"][:_EVIDENCE_CAP]:
             note = src.get("note_page", "")
             label = src.get("title") or src.get("source_id")
             link = f"[{label}]({up}{note})" if note else label
-            snippet = f" — {src['evidence']}" if src.get("evidence") else ""
-            lines.append(f"- {link}{snippet}")
+            summary = f" — {src['summary']}" if src.get("summary") else ""
+            lines.append(f"- {link}{summary}")
 
-        lines += ["", "## External context"]
-        if enrichment.get("external_context"):
-            lines.append("_General knowledge, not drawn from your sources:_")
-            lines.append("")
-            lines.append(enrichment["external_context"].strip())
-        else:
-            lines.append("_External context not yet added._")
+        # Relationships — every line carries the reason, not just a category.
+        rel_lines: list[str] = []
+        for rel in rels_out.get(entity["id"], [])[:_RELATION_CAP]:
+            target = by_id.get(rel["to"])
+            if target:
+                rel_lines.append(f"- [[{target['name']}]] — {rel['explanation']}")
+        for rel in rels_in.get(entity["id"], [])[:_RELATION_CAP]:
+            source = by_id.get(rel["from"])
+            if source:
+                rel_lines.append(f"- [[{source['name']}]] — {rel['explanation']}")
+        if rel_lines:
+            lines += ["", "## Relationships", *rel_lines]
+
+        # External sources — real reference material the enrichment pass drew
+        # on, so the reader can go verify or read further, clearly labeled as
+        # the model's own recalled knowledge rather than something it browsed
+        # live (Lexicon's agents aren't wired to a live search tool today).
+        external = enrichment.get("external_sources") or []
+        if external:
+            lines += ["", "## External Sources",
+                     "_Recalled from the model's own knowledge, not fetched live — worth verifying:_", ""]
+            for item in external:
+                url = str(item.get("url", "")).strip()
+                label = str(item.get("label", "")).strip() or url
+                if url:
+                    lines.append(f"- [{label}]({url})")
         lines.append("")
         return "\n".join(lines)
 
-    def _write_entity_index(self, registry: dict) -> None:
+    def _write_entity_index(self, registry: dict, relations: list[dict]) -> None:
+        """A metadata layer complete enough to answer questions about an
+        entity — where it came from, one line per source — without opening
+        every entity page. Meant for both humans skimming and a future
+        chat feature reading this one file for grounding."""
         self._indexes_dir.mkdir(parents=True, exist_ok=True)
         index_path = self._indexes_dir / "entities.md"
         if not registry:
-            index_path.write_text(
-                "# Entity Index\n\n_No entities yet. Import and index sources to populate this._\n",
-                encoding="utf-8")
+            index_path.unlink(missing_ok=True)
             return
+
+        rel_count: dict[str, int] = defaultdict(int)
+        for rel in relations:
+            rel_count[rel["from"]] += 1
+            rel_count[rel["to"]] += 1
+
         by_type: dict[str, list[dict]] = defaultdict(list)
         for entity in registry.values():
             by_type[entity["type"]].append(entity)
+
         lines = ["# Entity Index", "",
-                 f"{len(registry)} entities across {len(by_type)} types.", ""]
+                 f"{len(registry)} entities across {len(by_type)} types, {len(relations)} relationships.", ""]
         for entity_type in sorted(by_type):
             entities = sorted(by_type[entity_type], key=lambda e: e["name"].lower())
             lines.append(f"## {entity_type.capitalize()} ({len(entities)})")
             for entity in entities:
-                count = len(entity["sources"])
-                lines.append(f"- [[{entity['name']}]] — {count} source{'' if count == 1 else 's'}")
-            lines.append("")
+                enrichment = entity.get("enrichment") or {}
+                description = (enrichment.get("description") or "").strip()
+                lines.append(f"### [[{entity['name']}]]")
+                lines.append(description if description else "_Not enriched yet._")
+                for src in entity["sources"]:
+                    label = src.get("title") or src.get("source_id")
+                    note = src.get("note_page", "")
+                    link = f"[{label}]({note})" if note else label
+                    summary = f" — {src['summary']}" if src.get("summary") else ""
+                    lines.append(f"- {link}{summary}")
+                if rel_count.get(entity["id"]):
+                    lines.append(f"- _{rel_count[entity['id']]} relationship"
+                                 f"{'' if rel_count[entity['id']] == 1 else 's'} — see the entity page_")
+                lines.append("")
         index_path.write_text("\n".join(lines), encoding="utf-8")
 
     # ── Persistence ──────────────────────────────────────────────────────────

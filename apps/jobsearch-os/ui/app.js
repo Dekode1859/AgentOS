@@ -11,7 +11,8 @@ const state = {
   providers: { featured: [], connected: [] },
   jobs: [],           // persisted job list (jobs/jobs.json)
   activeJobId: null,  // job open in detail view
-  browser: { port: null, jobId: null }, // Playwright application browser session
+  browser: { port: null, jobId: null }, // headed side-by-side session (Settings > Browser Account setup only)
+  embed: { port: null, jobId: null, viewportW: 0, viewportH: 0 }, // embedded application browser (Application tab)
   browserProfileExists: false,           // true only after Google login is confirmed
   browserProfileEmail: null,             // Google account email from profile-meta.json
   autoAnalyzePaste: false,               // Settings toggle: auto-run match after paste-add
@@ -981,6 +982,15 @@ const bridge = (() => {
     browserSetupProfile:      ()    => call('browser_setup_profile'),
     browserCheckGoogleLogin:  ()    => call('browser_check_google_login'),
     browserResetProfile:      ()    => call('browser_reset_profile'),
+    browserEmbedOpen:         (url, w, h) => call('browser_embed_open', url, w, h),
+    browserEmbedClose:        ()    => call('browser_embed_close'),
+    browserEmbedStatus:       ()    => call('browser_embed_status'),
+    browserEmbedNavigate:     (url) => call('browser_embed_navigate', url),
+    browserEmbedBack:         ()    => call('browser_embed_back'),
+    browserEmbedForward:      ()    => call('browser_embed_forward'),
+    browserEmbedReload:       ()    => call('browser_embed_reload'),
+    browserEmbedFileChooserPending: () => call('browser_embed_file_chooser_pending'),
+    browserEmbedChooseFiles:  ()    => call('browser_embed_choose_files'),
   };
 })();
 
@@ -2500,7 +2510,6 @@ function switchDetailTab(name) {
     }
     scaleResumePage();
   }
-  if (name === 'application' && state.browser.port) detectApplicationFields();
   updatePaneHeight();
 }
 
@@ -2524,7 +2533,8 @@ function showJobDetail(id) {
   sel.innerHTML = Object.entries(STATUS_LABELS)
     .map(([v, l]) => `<option value="${v}"${job.status === v ? ' selected' : ''}>${l}</option>`).join('');
 
-  // Close browser if we're switching to a different job
+  // Close any application/setup session open for a different job's tab
+  if (state.embed.port && state.embed.jobId !== id) closeEmbeddedApplicationBrowser();
   if (state.browser.port && state.browser.jobId !== id) closeApplicationBrowser();
 
   renderJobDetailCards(job);
@@ -3449,72 +3459,20 @@ async function clearResumeSkillSelections() {
 }
 
 // ── Application tab ───────────────────────────────────────────────────────────
-// ── Application field detection ───────────────────────────────────────────────
-
-async function detectApplicationFields() {
-  const body = document.getElementById('app-fields-body');
-  if (!body || !state.browser.port) return;
-
-  const btn = document.getElementById('btn-rescan-fields');
-  if (btn) btn.disabled = true;
-
-  body.innerHTML = `
-    <div class="app-fields-loading">
-      <div class="app-spin"></div>
-      <span>Scanning page for form fields…</span>
-    </div>`;
-
-  try {
-    const result = await bridge.browserDetectFields();
-    if (!result?.ok || !result.forms?.length) {
-      body.innerHTML = `
-        <div class="app-fields-empty">
-          <sl-icon library="lucide" name="file-search"></sl-icon>
-          No form fields found on this page.
-          <span class="app-fields-empty-hint">Navigate to the application page and hit Re-scan.</span>
-        </div>`;
-    } else {
-      body.innerHTML = result.forms.map(renderFormCard).join('');
-    }
-  } catch (e) {
-    body.innerHTML = `
-      <div class="app-fields-empty">
-        Detection error: ${escHtml(e.message)}
-      </div>`;
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-function renderFormCard(form) {
-  const rows = form.fields.map(f => `
-    <div class="app-form-field">
-      <span class="app-field-type-badge">${escHtml(f.typeName)}</span>
-      <div class="app-field-detail">
-        <span class="app-field-label">${escHtml(f.label)}${f.required ? ' <span class="app-field-req">*</span>' : ''}</span>
-        ${f.helperText ? `<span class="app-field-helper">${escHtml(f.helperText)}</span>` : ''}
-        ${f.accept    ? `<span class="app-field-helper">Accepts: ${escHtml(f.accept)}</span>` : ''}
-      </div>
-    </div>`).join('');
-
-  return `
-    <div class="app-form-card">
-      <div class="app-form-card-head">
-        <span class="app-form-card-name">${escHtml(form.name)}</span>
-        <span class="app-form-card-count">${form.fields.length} field${form.fields.length !== 1 ? 's' : ''}</span>
-      </div>
-      <div class="app-form-field-list">${rows}</div>
-    </div>`;
-}
+// The "Application" tab embeds a live, headless Chromium session (see
+// browser_embed_agent.py) directly in the page — no second OS window. The
+// session shares its login cookies with the one-time Google/LinkedIn sign-in
+// under Settings > Browser Account, so applying stays logged in.
 
 function renderApplicationTab(job) {
   const el = document.getElementById('application-tab-content');
   if (!el) return;
   const url      = job?.link || '';
   const hasDraft = !!job?.resume_draft;
-  // Distinguish: setup session vs normal job session vs no session
-  const isSetup  = !!(state.browser.port && state.browser.jobId === '__setup__');
-  const isOpen   = !!(state.browser.port && state.browser.jobId !== '__setup__');
+  // Distinguish: one-time Google-login setup session (Settings, unchanged
+  // legacy side-by-side flow) vs this job's embedded application session.
+  const isSetup     = !!(state.browser.port && state.browser.jobId === '__setup__');
+  const isEmbedOpen = !!(state.embed.port && state.embed.jobId === job?.id);
 
   let ctrlHtml = '';
   if (isSetup) {
@@ -3529,26 +3487,35 @@ function renderApplicationTab(job) {
           Cancel
         </button>
       </div>`;
-  } else if (isOpen) {
+  } else if (isEmbedOpen) {
     ctrlHtml = `
-      <div class="app-url-strip">
-        <sl-icon library="lucide" name="globe" class="app-url-icon"></sl-icon>
-        <span id="app-current-url" class="app-url-val">-</span>
+      <div class="app-embed-toolbar">
+        <button class="app-embed-icon-btn" id="btn-embed-back" title="Back"><sl-icon library="lucide" name="arrow-left"></sl-icon></button>
+        <button class="app-embed-icon-btn" id="btn-embed-forward" title="Forward"><sl-icon library="lucide" name="arrow-right"></sl-icon></button>
+        <button class="app-embed-icon-btn" id="btn-embed-reload" title="Reload"><sl-icon library="lucide" name="refresh-cw"></sl-icon></button>
+        <span id="app-embed-url" class="app-embed-url">${escHtml(url)}</span>
+        <button class="app-embed-icon-btn" id="btn-embed-upload" title="Choose a file for the field you clicked on the page">
+          <sl-icon library="lucide" name="upload"></sl-icon>
+        </button>
+        <button class="app-embed-icon-btn" id="btn-embed-external" title="Open in your system browser instead">
+          <sl-icon library="lucide" name="external-link"></sl-icon>
+        </button>
+        <button class="app-embed-icon-btn app-embed-icon-danger" id="btn-embed-close" title="Close"><sl-icon library="lucide" name="x"></sl-icon></button>
       </div>
-      <button class="app-ctrl-btn app-ctrl-primary" id="btn-focus-browser">
-        <sl-icon library="lucide" name="focus"></sl-icon> Focus
-      </button>
-      <button class="app-ctrl-btn app-ctrl-ghost" id="btn-navigate-browser">
-        <sl-icon library="lucide" name="rotate-ccw"></sl-icon> Reset URL
-      </button>
-      <button class="app-ctrl-btn app-ctrl-danger" id="btn-close-app-browser">
-        <sl-icon library="lucide" name="x"></sl-icon> Close
-      </button>`;
+      <div class="app-embed-frame">
+        <img id="app-embed-view" alt="Application page" draggable="false" />
+        <div id="app-embed-upload-hint" class="app-embed-upload-hint hidden">A file field is waiting - click "Upload" above to choose a file.</div>
+      </div>`;
   } else if (url && state.browserProfileExists) {
     ctrlHtml = `
-      <button class="app-ctrl-btn app-ctrl-primary" id="btn-open-app-browser">
-        <sl-icon library="lucide" name="external-link"></sl-icon> Open Application
-      </button>`;
+      <div class="app-embed-empty">
+        <sl-icon library="lucide" name="external-link" class="empty-icon"></sl-icon>
+        <div class="empty-title">Ready to apply</div>
+        <div class="empty-sub">Opens the application right here, signed in with your saved account.</div>
+        <button class="app-ctrl-btn app-ctrl-primary" id="btn-embed-open">
+          <sl-icon library="lucide" name="external-link"></sl-icon> Open Application
+        </button>
+      </div>`;
   } else if (url) {
     ctrlHtml = `
       <div class="app-setup-prompt">
@@ -3562,52 +3529,25 @@ function renderApplicationTab(job) {
   }
 
   el.innerHTML = `
-    <div class="app-layout">
-
-      <div class="app-fields-area">
-        <div class="app-fields-bar">
-          <sl-icon library="lucide" name="layout-list"></sl-icon>
-          Detected Fields
-          ${isOpen ? `<button class="app-rescan-btn" id="btn-rescan-fields" title="Re-scan page for fields"><sl-icon library="lucide" name="refresh-cw"></sl-icon></button>` : ''}
+    <div class="app-layout app-layout-embed">
+      ${ctrlHtml}
+      ${hasDraft ? `
+        <div class="app-ctrl-foot">
+          <button class="app-ctrl-btn app-ctrl-ghost" id="btn-export-pdf-app">
+            <sl-icon library="lucide" name="download"></sl-icon> Export Resume
+          </button>
         </div>
-        <div class="app-fields-body" id="app-fields-body">${isOpen ? '' : `
-          <div class="app-fields-empty">
-            <sl-icon library="lucide" name="file-search"></sl-icon>
-            ${url
-              ? 'Nothing scanned yet. Open the application and the form fields on the page will be listed here.'
-              : 'Add an apply link to this job to open its application and scan the form fields.'}
-          </div>`}</div>
-      </div>
-
-      <div class="app-ctrl-rail">
-        <div class="app-ctrl-top">${ctrlHtml}</div>
-        ${hasDraft ? `
-          <div class="app-ctrl-foot">
-            <button class="app-ctrl-btn app-ctrl-ghost" id="btn-export-pdf-app">
-              <sl-icon library="lucide" name="download"></sl-icon> Export Resume
-            </button>
-          </div>
-        ` : ''}
-      </div>
-
+      ` : ''}
     </div>`;
 
-  if (isOpen) {
-    refreshBrowserStatus();
-    detectApplicationFields();
-  }
-
-  document.getElementById('btn-rescan-fields')
-    ?.addEventListener('click', detectApplicationFields);
+  if (isEmbedOpen) attachEmbedView(job);
 }
 
-// ── Browser health polling ────────────────────────────────────────────────────
+// ── Browser health polling (Settings > Browser Account setup session) ───────
 let _browserPollInterval = null;
-let _lastScannedUrl = null;   // track URL so we re-scan on navigation
 
 function _startBrowserPoll() {
   _stopBrowserPoll();
-  _lastScannedUrl = null;
   _browserPollInterval = setInterval(async () => {
     const port = state.browser.port;
     if (!port) { _stopBrowserPoll(); return; }
@@ -3617,17 +3557,6 @@ function _startBrowserPoll() {
       const r    = await fetch(`http://127.0.0.1:${port}/status`, { signal: ctrl.signal });
       clearTimeout(tid);
       if (!r.ok) throw new Error('not ok');
-      const data = await r.json();
-      const el = document.getElementById('app-current-url');
-      if (el && data.url) el.textContent = data.url;
-      // Re-detect fields whenever the user navigates to a new URL
-      if (data.url && data.url !== _lastScannedUrl) {
-        _lastScannedUrl = data.url;
-        const appTab = document.getElementById('tab-application');
-        if (appTab && !appTab.classList.contains('hidden')) {
-          detectApplicationFields();
-        }
-      }
     } catch (_) {
       // Connection refused or timeout → subprocess exited (browser closed).
       _handleBrowserDied();
@@ -3640,64 +3569,24 @@ function _stopBrowserPoll() {
 }
 
 function _handleBrowserDied() {
+  // Only ever fires for the Settings > Browser Account setup session now —
+  // the Application tab uses the embedded session (see _handleEmbedDied).
   _stopBrowserPoll();
   if (!state.browser.port) return; // already cleaned up
-  const wasSetup = state.browser.jobId === '__setup__';
   state.browser.port  = null;
   state.browser.jobId = null;
-  // Clean up Python-side subprocess refs and trigger _restore_window_state()
-  // (idempotent - safe even if the watcher thread already called it).
   bridge.browserClose().catch(() => {});
   loadBrowserProfileStatus().then(() => {
     const job = jobById(state.activeJobId);
     if (job) renderApplicationTab(job);
     renderBrowserProfileSettings();
   });
-  showToast(wasSetup
-    ? 'Browser account set up - your logins are saved for next time.'
-    : 'Application browser was closed - click "Open Application" to relaunch.');
+  showToast('Browser account set up - your logins are saved for next time.');
 }
 
 // Called by the bridge watcher thread via evaluate_js the instant the
 // browser subprocess exits - no polling lag.
 window._onBrowserProcessDied = function() { _handleBrowserDied(); };
-
-async function openApplicationBrowser() {
-  const job = jobById(state.activeJobId);
-  if (!job?.link) return;
-  const btn = document.getElementById('btn-open-app-browser');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<sl-spinner style="font-size:13px"></sl-spinner> Launching…'; }
-  try {
-    const result = await bridge.browserOpen(job.link);
-    if (!result?.ok) {
-      showToast(`Browser failed: ${result?.error || 'unknown'}`);
-      if (btn) { btn.disabled = false; btn.innerHTML = '<sl-icon library="lucide" name="globe" style="vertical-align:-2px"></sl-icon> Open Application'; }
-      return;
-    }
-    state.browser.port  = result.port;
-    state.browser.jobId = state.activeJobId;
-    renderApplicationTab(job);
-    _startBrowserPoll(); // detect if user closes the browser externally
-  } catch (e) {
-    showToast(`Browser error: ${e.message}`);
-    if (btn) { btn.disabled = false; btn.innerHTML = '<sl-icon library="lucide" name="globe" style="vertical-align:-2px"></sl-icon> Open Application'; }
-  }
-}
-
-async function focusApplicationBrowser() {
-  const port = state.browser.port;
-  if (!port) return;
-  try {
-    const r = await fetch(`http://127.0.0.1:${port}/focus`, {
-      method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' },
-    });
-    if (!r.ok) throw new Error(`status ${r.status}`);
-  } catch (e) {
-    // Focus failure alone doesn't mean the browser died - the health poll
-    // handles that. Just surface the error so the user knows to check.
-    showToast(`Could not focus browser window: ${e.message}`);
-  }
-}
 
 async function closeApplicationBrowser() {
   _stopBrowserPoll();
@@ -3824,29 +3713,179 @@ function renderBrowserProfileSettings() {
   }
 }
 
-async function resetBrowserUrl() {
-  const job  = jobById(state.activeJobId);
-  const port = state.browser.port;
-  if (!job?.link || !port) return;
+// ── Embedded application browser ─────────────────────────────────────────────
+// A headless Chromium (browser_embed_agent.py) streams itself into an <img>
+// as an MJPEG multipart response — the browser renders that natively, no
+// canvas/JS decoding needed. Clicks/keys/scroll on the <img> are translated
+// to the emulated viewport's coordinate space and POSTed back to the same
+// subprocess, which replays them via the Chrome DevTools Protocol.
+
+let _embedPollInterval = null;
+let _embedFileChooserInterval = null;
+
+async function openEmbeddedApplicationBrowser(job) {
+  if (!job?.link) return;
+  const empty = document.getElementById('application-tab-content')?.querySelector('.app-embed-empty');
+  const btn = document.getElementById('btn-embed-open');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<sl-spinner style="font-size:13px"></sl-spinner> Launching…'; }
+
+  // Size the embedded viewport to roughly match the panel it'll render into.
+  const host = document.getElementById('application-tab-content');
+  const w = Math.max(600, Math.round((host?.clientWidth || 1000) - 40));
+  const h = Math.max(400, Math.round((host?.clientHeight || 700) - 70));
+
   try {
-    await fetch(`http://127.0.0.1:${port}/navigate`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: job.link }),
-    });
-    setTimeout(refreshBrowserStatus, 2000);
-  } catch (e) { showToast(`Navigate failed: ${e.message}`); }
+    const result = await bridge.browserEmbedOpen(job.link, w, h);
+    if (!result?.ok) {
+      showToast(`Couldn't open the application: ${result?.error || 'unknown error'}`);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<sl-icon library="lucide" name="external-link"></sl-icon> Open Application'; }
+      return;
+    }
+    state.embed.port = result.port;
+    state.embed.jobId = job.id;
+    state.embed.viewportW = w;
+    state.embed.viewportH = h;
+    renderApplicationTab(job);
+    _startEmbedPoll();
+  } catch (e) {
+    showToast(`Couldn't open the application: ${e.message}`);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<sl-icon library="lucide" name="external-link"></sl-icon> Open Application'; }
+  }
 }
 
-async function refreshBrowserStatus() {
-  const port = state.browser.port;
-  if (!port) return;
-  try {
-    const r = await fetch(`http://127.0.0.1:${port}/status`);
-    if (!r.ok) return;
-    const data = await r.json();
-    const el = document.getElementById('app-current-url');
-    if (el && data.url) el.textContent = data.url;
-  } catch (_) {}
+async function closeEmbeddedApplicationBrowser() {
+  _stopEmbedPoll();
+  _embedEventSource?.close();
+  _embedEventSource = null;
+  try { await bridge.browserEmbedClose(); } catch (_) {}
+  state.embed.port = null;
+  state.embed.jobId = null;
+  const job = jobById(state.activeJobId);
+  if (job) renderApplicationTab(job);
+}
+
+function _handleEmbedDied() {
+  _stopEmbedPoll();
+  _embedEventSource?.close();
+  _embedEventSource = null;
+  if (!state.embed.port) return;
+  state.embed.port = null;
+  state.embed.jobId = null;
+  const job = jobById(state.activeJobId);
+  if (job) renderApplicationTab(job);
+  showToast('The application session closed - click "Open Application" to relaunch.');
+}
+window._onEmbeddedBrowserDied = function() { _handleEmbedDied(); };
+
+function _startEmbedPoll() {
+  _stopEmbedPoll();
+  _embedPollInterval = setInterval(async () => {
+    if (!state.embed.port) { _stopEmbedPoll(); return; }
+    try {
+      const status = await bridge.browserEmbedStatus();
+      if (!status?.ok) throw new Error('not ok');
+      const urlEl = document.getElementById('app-embed-url');
+      if (urlEl && status.url) urlEl.textContent = status.url;
+    } catch (_) {
+      _handleEmbedDied();
+      return;
+    }
+    try {
+      const chooser = await bridge.browserEmbedFileChooserPending();
+      document.getElementById('app-embed-upload-hint')?.classList.toggle('hidden', !chooser?.pending);
+    } catch (_) {}
+  }, 2000);
+}
+
+function _stopEmbedPoll() {
+  if (_embedPollInterval) { clearInterval(_embedPollInterval); _embedPollInterval = null; }
+}
+
+// CDP key table mirrored in browser_embed_agent.py — only the control keys
+// forms actually need; printable characters go through Input.insertText.
+const _EMBED_KEY_NAMES = new Set([
+  'Backspace', 'Tab', 'Enter', 'Escape', 'Delete',
+  'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown',
+]);
+
+let _embedEventSource = null;
+
+function attachEmbedView(job) {
+  const img = document.getElementById('app-embed-view');
+  if (!img) return;
+  const port = state.embed.port;
+
+  // Frames arrive as SSE (base64 JPEG per event) and get painted as a data
+  // URL — plain multipart/x-mixed-replace on <img src> no longer renders in
+  // Chromium/WebView2 (confirmed: correct bytes over the wire, but the <img>
+  // never fires 'load' and naturalWidth stays 0).
+  _embedEventSource?.close();
+  const es = new EventSource(`http://127.0.0.1:${port}/stream`);
+  es.onmessage = (e) => { img.src = `data:image/jpeg;base64,${e.data}`; };
+  _embedEventSource = es;
+
+  const toViewportCoords = (clientX, clientY) => {
+    const rect = img.getBoundingClientRect();
+    const scaleX = state.embed.viewportW / rect.width;
+    const scaleY = state.embed.viewportH / rect.height;
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+  };
+  const postInput = (body) => {
+    fetch(`http://127.0.0.1:${port}/input`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  };
+
+  img.addEventListener('mousemove', e => {
+    const { x, y } = toViewportCoords(e.clientX, e.clientY);
+    postInput({ kind: 'mouse_move', x, y });
+  });
+  img.addEventListener('mousedown', e => {
+    e.preventDefault();
+    img.focus();
+    const { x, y } = toViewportCoords(e.clientX, e.clientY);
+    postInput({ kind: 'mouse_down', x, y, button: e.button === 2 ? 'right' : 'left' });
+  });
+  img.addEventListener('mouseup', e => {
+    const { x, y } = toViewportCoords(e.clientX, e.clientY);
+    postInput({ kind: 'mouse_up', x, y, button: e.button === 2 ? 'right' : 'left' });
+  });
+  img.addEventListener('wheel', e => {
+    e.preventDefault();
+    const { x, y } = toViewportCoords(e.clientX, e.clientY);
+    postInput({ kind: 'wheel', x, y, deltaX: e.deltaX, deltaY: e.deltaY });
+  }, { passive: false });
+  img.addEventListener('contextmenu', e => e.preventDefault());
+
+  // The <img> itself can't hold keyboard focus meaningfully, so make it
+  // tabbable and capture keys at the document level while it's "active".
+  img.tabIndex = 0;
+  img.addEventListener('keydown', e => {
+    if (_EMBED_KEY_NAMES.has(e.key)) {
+      e.preventDefault();
+      postInput({ kind: 'key', name: e.key, modifiers: _embedModifiers(e) });
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      postInput({ kind: 'text', text: e.key });
+    }
+  });
+
+  document.getElementById('btn-embed-back')?.addEventListener('click', () => bridge.browserEmbedBack());
+  document.getElementById('btn-embed-forward')?.addEventListener('click', () => bridge.browserEmbedForward());
+  document.getElementById('btn-embed-reload')?.addEventListener('click', () => bridge.browserEmbedReload());
+  document.getElementById('btn-embed-external')?.addEventListener('click', () => bridge.openExternal(job.link));
+  document.getElementById('btn-embed-close')?.addEventListener('click', closeEmbeddedApplicationBrowser);
+  document.getElementById('btn-embed-upload')?.addEventListener('click', async () => {
+    const result = await bridge.browserEmbedChooseFiles();
+    if (!result?.ok) showToast(result?.error || 'No file field is waiting for a file yet - click it on the page first.');
+    else document.getElementById('app-embed-upload-hint')?.classList.add('hidden');
+  });
+}
+
+function _embedModifiers(e) {
+  // CDP Input.Modifier bitmask: Alt=1, Ctrl=2, Meta/Cmd=4, Shift=8.
+  return (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
 }
 
 // ── Resume Preview tab ────────────────────────────────────────────────────────
@@ -4512,6 +4551,7 @@ function updateModelBadge() {
 // ── View switching ───────────────────────────────────────────────────────────
 function switchView(view) {
   if (view !== 'jobs' && state.browser.port) closeApplicationBrowser();
+  if (view !== 'jobs' && state.embed.port) closeEmbeddedApplicationBrowser();
   document.querySelectorAll('.view').forEach(v =>
     v.classList.toggle('active', v.id === `view-${view}`));
   syncChrome(view);
@@ -4736,10 +4776,7 @@ function wire() {
     if (e.target.closest('#btn-export-pdf-app'))      { exportResumePDF(); return; }
     if (e.target.closest('#btn-add-all-profile'))     { addAllSkillsToProfile(); return; }
     if (e.target.closest('#btn-include-all-draft'))   { includeAllInDraft(); return; }
-    if (e.target.closest('#btn-open-app-browser'))    { openApplicationBrowser(); return; }
-    if (e.target.closest('#btn-focus-browser'))       { focusApplicationBrowser(); return; }
-    if (e.target.closest('#btn-close-app-browser'))   { closeApplicationBrowser(); return; }
-    if (e.target.closest('#btn-navigate-browser'))    { resetBrowserUrl(); return; }
+    if (e.target.closest('#btn-embed-open'))          { openEmbeddedApplicationBrowser(jobById(state.activeJobId)); return; }
     if (e.target.closest('#btn-setup-profile-inline'))  { setupBrowserProfile(); return; }
     if (e.target.closest('#btn-confirm-google-login'))  { confirmGoogleLogin(); return; }
     if (e.target.closest('#btn-cancel-setup'))          { closeApplicationBrowser(); return; }

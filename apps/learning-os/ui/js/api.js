@@ -54,6 +54,7 @@ export const api = {
   rebuildSource: (sourceId) => postBridge('lexicon_rebuild_source', [sourceId]),
   retryFailed: () => postBridge('lexicon_retry_failed'),
   enrich: () => postBridge('lexicon_enrich'),
+  reconcile: () => postBridge('lexicon_reconcile'),
   previewDelete: (sourceId) => postBridge('lexicon_preview_delete', [sourceId]),
   deleteSource: (sourceId) => postBridge('lexicon_delete_source', [sourceId]),
   openExternal: (url) => postBridge('open_external', [url]),

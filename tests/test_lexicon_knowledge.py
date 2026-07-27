@@ -30,7 +30,7 @@ class FakeRunner:
                  relations=(), scope="general", fail=False):
         self._workspace = Path(workspace)
         self._entities = entities
-        self._relations = relations         # iterable of (from, to, type)
+        self._relations = relations         # iterable of (from, to, explanation)
         self._scope = scope
         self._fail = fail
         self.calls = 0
@@ -45,8 +45,8 @@ class FakeRunner:
         if agent_id == "enricher":
             name = re.search(r"Entity name: (.+)", prompt).group(1).strip()
             payload = {
-                "description": f"{name} is a well-known thing in general.",
-                "external_context": f"General background about {name} and where it is used.",
+                "description": f"{name} is a well-known thing in general, used for its usual purpose.",
+                "external_sources": [{"label": f"{name} docs", "url": f"https://example.com/{name.lower()}"}],
                 "confidence": "high",
             }
             out_abs.write_text(json.dumps(payload), encoding="utf-8")
@@ -66,8 +66,8 @@ class FakeRunner:
             "entities": [{"name": n, "type": "concept", "scope": self._scope,
                           "aliases": [], "evidence": f"how {n} is used"}
                          for n in self._entities],
-            "relations": [{"from": f, "to": t, "type": ty, "evidence": "because the doc says so"}
-                          for (f, t, ty) in self._relations],
+            "relations": [{"from": f, "to": t, "explanation": ex}
+                          for (f, t, ex) in self._relations],
             "note_page": note_rel,
         }
         out_abs.write_text(json.dumps(manifest), encoding="utf-8")
@@ -104,11 +104,12 @@ class KnowledgePipelineTests(unittest.TestCase):
         path.write_text(text, encoding="utf-8")
         return self.pipeline.import_file(path)["source"]
 
-    def _manager(self, runner, *, enrich_on_index=False):
-        # Auto-enrich is off by default here so indexing tests exercise just the
-        # index→curate path; enrichment has its own dedicated tests.
+    def _manager(self, runner, *, enrich_on_index=False, reconcile_on_start=False):
+        # Auto-enrich and startup reconcile are off by default here so indexing
+        # tests exercise just the index→curate path; both have dedicated tests.
         return JobManager(self.workspace, runner, self.pipeline,
-                          enrich_on_index=enrich_on_index, autostart=False)
+                          enrich_on_index=enrich_on_index,
+                          reconcile_on_start=reconcile_on_start, autostart=False)
 
     def _run_one(self, jm, source_id, title=""):
         # Drive one job synchronously, mirroring _run_loop's try/except so a
@@ -407,7 +408,7 @@ class KnowledgePipelineTests(unittest.TestCase):
 
     # ── Enrichment ───────────────────────────────────────────────────────────
 
-    def test_enrich_fills_description_and_external_context(self):
+    def test_enrich_fills_description_and_external_sources(self):
         source = self._add_source()
         jm = self._manager(FakeRunner(self.workspace, entities=("Pydantic",)))
         self._run_one(jm, source["id"], source["title"])
@@ -425,9 +426,11 @@ class KnowledgePipelineTests(unittest.TestCase):
         self.assertTrue(after["Pydantic"]["enriched"])
         page = self.workspace / "wiki" / "entities" / "concept" / "pydantic.md"
         body = page.read_text(encoding="utf-8")
-        self.assertIn("Pydantic is a well-known thing", body)          # description → What it is
-        self.assertIn("General background about Pydantic", body)        # external_context
-        self.assertIn("General knowledge, not drawn from your sources", body)
+        # Description leads the page, directly under the title.
+        self.assertTrue(body.startswith("# Pydantic\n\nPydantic is a well-known thing"))
+        self.assertIn("## External Sources", body)
+        self.assertIn("[Pydantic docs](https://example.com/pydantic)", body)
+        self.assertIn("Recalled from the model's own knowledge, not fetched live", body)
 
     def test_enrich_only_missing_is_idempotent(self):
         source = self._add_source()
@@ -466,6 +469,72 @@ class KnowledgePipelineTests(unittest.TestCase):
                            enrich_on_index=True)
         self._run_one(jm, source["id"], source["title"])
         self.assertEqual(jm.status()["registry"]["enriched"], 1)
+
+    # ── Reconcile (self-heal deleted / orphaned sources) ─────────────────────
+
+    def test_reconcile_removes_orphan_note_page(self):
+        source = self._add_source()
+        jm = self._manager(FakeRunner(self.workspace, entities=("Pydantic",)))
+        self._run_one(jm, source["id"], source["title"])
+
+        # Simulate a leftover note from an older indexing scheme (a note file
+        # not owned by any manifest — exactly the project-spec.md situation).
+        orphan = self.workspace / "wiki" / "sources" / "project-spec.md"
+        orphan.write_text("# project-spec\n\nMentions [[Ghost]].\n", encoding="utf-8")
+        self.assertIn("sources/project-spec.md",
+                      {p["path"] for p in self.wiki.index()["pages"]})
+
+        result = jm.reconcile()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["removed_notes"], 1)
+        self.assertFalse(orphan.exists())
+        # The real source's note must survive.
+        self.assertTrue((self.workspace / "wiki" / "sources" / f"{source['id']}.md").exists())
+        self.assertNotIn("sources/project-spec.md",
+                         {p["path"] for p in self.wiki.index()["pages"]})
+
+    def test_reconcile_drops_manifest_and_entities_for_a_vanished_source(self):
+        a = self._add_source("a.txt", "Content A.\n")
+        b = self._add_source("b.txt", "Content B.\n")
+        jm = self._manager(FakeRunner(self.workspace, entities=("OnlyA",)))
+        self._run_one(jm, a["id"], a["title"])
+        jm._runner = FakeRunner(self.workspace, entities=("OnlyB",))
+        self._run_one(jm, b["id"], b["title"])
+        self.assertEqual({e["name"] for e in jm.entities()["entities"]}, {"OnlyA", "OnlyB"})
+
+        # Delete source A's raw+processed *outside the app* (no forget_source).
+        self.pipeline.delete_source(a["id"])
+        # Its manifest, note, and entity are now stale.
+        self.assertTrue((self.workspace / "wiki" / ".lexicon" / "sources" / f"{a['id']}.json").exists())
+
+        result = jm.reconcile()
+        self.assertEqual(result["removed_manifests"], 1)
+        self.assertEqual(result["removed_notes"], 1)
+        self.assertFalse((self.workspace / "wiki" / ".lexicon" / "sources" / f"{a['id']}.json").exists())
+        self.assertEqual({e["name"] for e in jm.entities()["entities"]}, {"OnlyB"})
+
+    def test_reconcile_leaves_a_healthy_workspace_untouched(self):
+        source = self._add_source()
+        jm = self._manager(FakeRunner(self.workspace, entities=("Pydantic",)))
+        self._run_one(jm, source["id"], source["title"])
+        before = {e["name"] for e in jm.entities()["entities"]}
+
+        result = jm.reconcile()
+        self.assertEqual(result["removed_manifests"], 0)
+        self.assertEqual(result["removed_notes"], 0)
+        self.assertEqual({e["name"] for e in jm.entities()["entities"]}, before)
+
+    def test_reconcile_on_start_self_heals(self):
+        source = self._add_source()
+        jm = self._manager(FakeRunner(self.workspace, entities=("Pydantic",)))
+        self._run_one(jm, source["id"], source["title"])
+        orphan = self.workspace / "wiki" / "sources" / "leftover.md"
+        orphan.write_text("# leftover\n\nSource: gone\n", encoding="utf-8")
+
+        # A fresh manager with reconcile_on_start should clean the orphan on boot.
+        JobManager(self.workspace, FakeRunner(self.workspace), self.pipeline,
+                   enrich_on_index=False, reconcile_on_start=True, autostart=False)
+        self.assertFalse(orphan.exists())
 
 
 if __name__ == "__main__":

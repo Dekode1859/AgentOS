@@ -6,9 +6,10 @@
  */
 'use strict';
 
+import { api } from '../api.js';
 import { icon } from '../icons.js';
-import { escHtml, emptyState } from '../ui.js';
-import { state, navigate } from '../main.js';
+import { escHtml, emptyState, toast } from '../ui.js';
+import { state, navigate, refreshData } from '../main.js';
 
 const NODE_COLORS = ['#22d3ee', '#a78bfa', '#f472b6', '#34d399', '#fbbf24', '#60a5fa', '#fb7185'];
 
@@ -321,7 +322,8 @@ export const graphView = {
           <p class="view-sub">${pages.length} pages · ${(state.wiki.edges || []).length} connections</p>
         </div>
         <div class="view-actions">
-          <button class="btn btn-ghost" id="graph-shuffle" title="Re-run layout">${icon('refresh-cw')}Layout</button>
+          <button class="btn btn-ghost" id="graph-reconcile" title="Purge deleted sources and rebuild the graph from what remains">${icon('refresh-cw')}Refresh</button>
+          <button class="btn btn-ghost" id="graph-shuffle" title="Re-run layout">${icon('waypoints')}Layout</button>
           <button class="btn btn-ghost" id="graph-fit" title="Fit to view">${icon('maximize')}Fit</button>
         </div>
       </header>
@@ -345,6 +347,27 @@ export const graphView = {
       setTimeout(fitView, 350);
     });
     root.querySelector('#graph-fit').addEventListener('click', fitView);
+    root.querySelector('#graph-reconcile').addEventListener('click', async (event) => {
+      const btn = event.currentTarget;
+      btn.disabled = true;
+      try {
+        const result = await api.reconcile();
+        if (!result.ok) {
+          toast('err', result.error || 'Refresh failed.');
+          return;
+        }
+        const purged = (result.removed_notes || 0) + (result.removed_manifests || 0);
+        toast('ok', purged
+          ? `Removed ${purged} orphaned item${purged === 1 ? '' : 's'} from deleted sources.`
+          : 'Graph is already up to date.');
+        await refreshData({ silent: true });
+        this.render(root);   // rebuild with the cleaned data
+      } catch (error) {
+        toast('err', error.message || 'Refresh failed.');
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     sim.resizeObserver = new ResizeObserver(() => draw());
     sim.resizeObserver.observe(sim.canvas);

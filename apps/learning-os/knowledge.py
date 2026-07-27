@@ -120,13 +120,26 @@ Only "general" entities become canonical pages and only they may appear in
 relations. When unsure, prefer "local" — a smaller, cleaner set of real
 concepts beats a noisy pile of project jargon.
 
-RELATIONS — capture only relationships you can actually justify from the text,
-between two "general" entities, and say WHY they relate with a specific type:
-- used_for, depends_on, part_of, implements, alternative_to, produces,
-  consumes, runs_on, defined_by, related_to (last resort only).
-Example: Pydantic —used_for→ data validation (because the doc uses Pydantic to
-validate JSON shapes). Never link two things just because they appear in the
-same document.
+TYPE — a short, free label for what kind of thing this is (e.g. "library",
+"programming language", "protocol", "algorithm", "dataset", "person",
+"standard"). Pick whatever word actually fits best; do not force it into a
+fixed category that doesn't apply — new kinds of things will keep showing up
+and you should describe them plainly rather than jam them into the nearest
+existing label.
+
+RELATIONS — capture a relationship only when you can explain it in one plain
+sentence, grounded in what the document actually says, between two "general"
+entities. The explanation IS the relation — there is no separate category
+label. Write it like you're telling someone how these two things actually
+connect: "Pydantic validates the JSON payloads before FastAPI passes them to
+the handler", not "Pydantic relates to FastAPI". Never link two things just
+because they happen to appear in the same document — if you can't state a real
+reason, don't record the relation.
+
+EVIDENCE — for both entities and relations, write a short, synthesized
+one-sentence account of what the document actually says, in your own words —
+not a verbatim quote fragment. This becomes the "how it appears in this
+source" bullet a reader sees, so make it stand on its own.
 
 Do exactly two things:
 
@@ -142,12 +155,11 @@ Do exactly two things:
    - "title": the source title
    - "summary": one-sentence summary
    - "entities": array of {{"name","type","scope","aliases","evidence"}} where
-     type is concept|tool|framework|library|person|topic, scope is
-     general|local, aliases is a (possibly empty) array, evidence is a short
-     grounding snippet from the document.
-   - "relations": array of {{"from","to","type","evidence"}} where from/to are
-     names of "general" entities you listed above, type is one of the relation
-     types above, and evidence is the phrase in the document that justifies it.
+     type is a free label (see TYPE above), scope is general|local, aliases is
+     a (possibly empty) array, evidence is the one-sentence account above.
+   - "relations": array of {{"from","to","explanation"}} where from/to are
+     names of "general" entities you listed above and explanation is the
+     one-sentence, grounded reason above. Omit any relation you can't explain.
    - "note_page": "{note_page}"
 
 Keep every claim grounded in the processed document."""
@@ -156,7 +168,8 @@ Keep every claim grounded in the processed document."""
 ENRICHER_PROMPT = """You are the Enricher for Lexicon.ai. Explain ONE entity \
 using your own general knowledge of the world — NOT limited to the user's
 documents. This is what lets the wiki actually understand what things are,
-instead of only parroting the sources.
+instead of only parroting the sources. This runs automatically the first time
+an entity is seen — the user never has to ask for it.
 
 Entity name: {name}
 Recorded type: {entity_type}
@@ -165,18 +178,25 @@ How it shows up in the user's imported sources:
 {evidence}
 
 Write the manifest JSON to the OUTPUT_FILE with exactly these keys:
-- "description": one or two sentences defining what {name} genuinely is in
-  general — authoritative, accurate, not limited to the user's sources.
-- "external_context": 2-4 sentences of genuinely useful background from your
-  own knowledge: what it is typically used for, how it relates to the ideas in
-  the evidence above, and common alternatives or related tools/concepts.
+- "description": 2-4 sentences defining what {name} genuinely is — how it's
+  actually described online and by the people who built or use it, what it's
+  typically used for, and how it relates to the ideas in the evidence above.
+  This is the very first thing a reader of the entity's page sees, so make it
+  a real, authoritative account, not hedge-y or vague.
+- "external_sources": array of {{"label","url"}} — concrete, real reference
+  material you associate with {name} from your own knowledge (official docs,
+  the project's own site, a standards body, Wikipedia) that a curious reader
+  could open to learn more. This is recalled from what you know, not a live
+  search, so only include URLs you are genuinely confident are real and
+  correct — it is fine to return an empty array rather than guess a URL.
 - "confidence": "high" if {name} is a well-known real thing you can describe
   accurately; "low" if it looks like a project-specific or made-up term you do
   not actually recognize.
 
 Rules:
 - If confidence is "low", say plainly in "description" that this appears to be a
-  project-specific term and do NOT invent facts about it.
+  project-specific term, do NOT invent facts about it, and leave
+  "external_sources" empty.
 - Never contradict the evidence; add real-world context around it.
 - Do not read or write any file other than the OUTPUT_FILE."""
 
@@ -188,7 +208,8 @@ class JobManager:
 
     def __init__(self, workspace_root: Path, runner, pipeline, *,
                  indexer_agent: str = "indexer", enricher_agent: str = "enricher",
-                 enrich_on_index: bool = True, autostart: bool = True):
+                 enrich_on_index: bool = True, reconcile_on_start: bool = True,
+                 autostart: bool = True):
         self._workspace = Path(workspace_root)
         self._runner = runner
         self._pipeline = pipeline
@@ -219,6 +240,15 @@ class JobManager:
         # already running; the job discards its output instead of completing.
         self._cancelling: set[str] = set()
         self._load_and_requeue()
+
+        # Self-heal on boot: a source deleted while the app was closed (or a
+        # note left by an older indexing scheme) leaves orphans the running app
+        # never got to clean up. Best-effort — never block startup over it.
+        if reconcile_on_start:
+            try:
+                self.reconcile()
+            except Exception:
+                pass
 
         self._worker = threading.Thread(target=self._run_loop, name="lexicon-indexer", daemon=True)
         if autostart:
@@ -282,6 +312,61 @@ class JobManager:
 
     def entities(self) -> dict:
         return self._curator.registry()
+
+    def reconcile(self) -> dict:
+        """Purge derived knowledge whose source no longer exists, then re-curate.
+
+        The in-app Delete button cascades correctly, but a source can also vanish
+        another way: the raw files get deleted outside the app, or an older
+        indexing scheme left a note behind under a different name. This makes the
+        wiki self-heal — any manifest whose source is gone, and any note page not
+        backed by a surviving manifest, is removed, and entities/relations are
+        rebuilt from what's left."""
+        with self._curate_lock:
+            return self._reconcile_locked()
+
+    def _reconcile_locked(self) -> dict:
+        live_ids = {s["id"] for s in self._pipeline.list_sources()}
+        valid_notes: set[str] = set()
+        removed_manifests = 0
+
+        # 1. Drop manifests whose source no longer exists; collect the note
+        #    pages the survivors legitimately own.
+        for path in sorted(self._sources_dir.glob("*.json")):
+            try:
+                manifest = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                path.unlink(missing_ok=True)
+                removed_manifests += 1
+                continue
+            source_id = manifest.get("source_id") or path.stem
+            if source_id not in live_ids:
+                path.unlink(missing_ok=True)
+                removed_manifests += 1
+                continue
+            note = str(manifest.get("note_page") or "").lstrip("/")
+            if note:
+                valid_notes.add(note)
+
+        # 2. Delete orphan note pages — any wiki/sources/*.md not owned by a
+        #    surviving manifest (stale renames, or a deleted source's leftover).
+        removed_notes = 0
+        notes_dir = self._workspace / "wiki" / "sources"
+        if notes_dir.is_dir():
+            for note_path in notes_dir.glob("*.md"):
+                if f"sources/{note_path.name}" not in valid_notes:
+                    note_path.unlink(missing_ok=True)
+                    removed_notes += 1
+
+        # 3. Rebuild entities / relations / entity pages from what survives.
+        curated = self._curator.curate()
+        return {
+            "ok": True,
+            "removed_manifests": removed_manifests,
+            "removed_notes": removed_notes,
+            "entities": curated["entities"],
+            "relations": curated["relations"],
+        }
 
     def preview_delete(self, source_id: str) -> dict:
         """What deleting this source would do, for a confirmation prompt."""
@@ -395,7 +480,6 @@ class JobManager:
                 "total": registry.get("total", 0),
                 "by_type": registry.get("by_type", {}),
                 "enriched": registry.get("enriched", 0),
-                "flagged": sum(1 for e in registry.get("entities", []) if e.get("flags")),
             },
             "recent": recent_view,
         }
@@ -541,9 +625,14 @@ class JobManager:
             if not description:
                 errors += 1
                 continue
+            external_sources = [
+                {"label": str(item.get("label", "")).strip(), "url": str(item.get("url", "")).strip()}
+                for item in (data.get("external_sources") or [])
+                if isinstance(item, dict) and str(item.get("url", "")).strip()
+            ]
             entity["enrichment"] = {
                 "description": description,
-                "external_context": str(data.get("external_context", "")).strip(),
+                "external_sources": external_sources,
                 "confidence": str(data.get("confidence", "")).strip().lower(),
                 "enriched_at": _iso_now(),
             }

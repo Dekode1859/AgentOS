@@ -515,6 +515,17 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 
 .kb-note .icon { width: 13px; height: 13px; }
 
+.kb-auto-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dim);
+  margin-bottom: 10px;
+}
+
+.kb-auto-note .icon { width: 13px; height: 13px; color: var(--accent2); }
+
 .kb-pills {
   display: flex;
   align-items: center;

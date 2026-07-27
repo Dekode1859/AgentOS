@@ -88,6 +88,12 @@ class LexiconBridge(Bridge):
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def lexicon_reconcile(self) -> dict:
+        try:
+            return self._jobs.reconcile()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     def lexicon_entities(self) -> dict:
         try:
             return self._jobs.entities()
