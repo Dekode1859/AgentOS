@@ -70,11 +70,11 @@ def save_key(opencode_home: Path, provider_id: str, api_key: str) -> dict:
     existing = {}
     if auth_path.exists():
         try:
-            existing = json.loads(auth_path.read_text())
+            existing = json.loads(auth_path.read_text(encoding="utf-8"))
         except Exception:
             pass
     existing[provider_id] = {"type": "api", "key": api_key}
-    auth_path.write_text(json.dumps(existing, indent=2))
+    auth_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
     return {"ok": True}
 
 
@@ -82,9 +82,9 @@ def remove_key(opencode_home: Path, provider_id: str) -> dict:
     auth_path = _auth_path(opencode_home)
     if auth_path.exists():
         try:
-            existing = json.loads(auth_path.read_text())
+            existing = json.loads(auth_path.read_text(encoding="utf-8"))
             existing.pop(provider_id, None)
-            auth_path.write_text(json.dumps(existing, indent=2))
+            auth_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
         except Exception:
             pass
     return {"ok": True}
@@ -93,7 +93,7 @@ def remove_key(opencode_home: Path, provider_id: str) -> dict:
 def set_default_model(project_root: Path, provider_id: str, model_id: str) -> dict:
     """Persist the default model in the app's opencode.json (providerID/modelID)."""
     oc_path = Path(project_root) / "opencode.json"
-    config = json.loads(oc_path.read_text())
+    config = json.loads(oc_path.read_text(encoding="utf-8"))
     config["model"] = f"{provider_id}/{model_id}"
-    oc_path.write_text(json.dumps(config, indent=2))
+    oc_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
     return {"ok": True, "model": config["model"]}

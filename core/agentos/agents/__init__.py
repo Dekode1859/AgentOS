@@ -24,7 +24,7 @@ def load_agents(project_root: Path) -> list[dict]:
     """
     oc_path = Path(project_root) / "opencode.json"
     try:
-        cfg = json.loads(oc_path.read_text())
+        cfg = json.loads(oc_path.read_text(encoding="utf-8"))
     except Exception:
         return []
     agents = cfg.get("agent", {}) or {}
@@ -43,6 +43,6 @@ def default_model(project_root: Path) -> str:
     """Return the app's configured default model string, or ''."""
     oc_path = Path(project_root) / "opencode.json"
     try:
-        return json.loads(oc_path.read_text()).get("model", "")
+        return json.loads(oc_path.read_text(encoding="utf-8")).get("model", "")
     except Exception:
         return ""
