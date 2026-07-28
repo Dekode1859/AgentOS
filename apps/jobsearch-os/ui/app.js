@@ -1232,6 +1232,7 @@ const exportState = {
   order: [],          // section order for this export ([] = default)
   summaryText: null,  // rewritten summary for this export (null = profile's own)
   jobId: null,        // set when tailoring for a specific job, else null
+  extraSkills: new Set(),  // JD-suggested skills to add to the resume only
 };
 
 const EXPORT_SECTIONS = [
@@ -1262,6 +1263,7 @@ function initExportState() {
   exportState.guiding = null;
   exportState.order = [...RESUME_SECTION_ORDER];
   exportState.summaryText = null;
+  exportState.extraSkills = new Set();
 
   for (const s of EXPORT_SECTIONS) {
     // Default on for anything that actually has content.
@@ -1321,7 +1323,10 @@ function buildExportDraft() {
     summary: inc.summary
       ? (exportState.summaryText != null ? exportState.summaryText : ((p.identity || {}).summary || ''))
       : '',
-    skills: inc.skills ? (p.skill_buckets || []).flatMap(b => b.skills || []) : [],
+    skills: inc.skills
+      ? [...new Set([...(p.skill_buckets || []).flatMap(b => b.skills || []),
+                     ...exportState.extraSkills])]
+      : [],
     experience: inc.experience ? experience : [],
     projects: inc.projects ? projects : [],
   };
@@ -1375,22 +1380,90 @@ function renderExportBudget() {
 // Same flow for both entry points. With a jobId it is "tailor for this role":
 // rewrites get the job description as steering context and the filename carries
 // the company. Without one it is the generic profile resume.
+// The flow is one component with two mount points: the Profile page's Export
+// Resume subview, and the Resume tab inside a job. Same markup, same handlers —
+// the only difference is whether a jobId is attached, which switches on the
+// job-skills block and gives rewrites the job description as context.
+const EXPORT_MOUNTS = ['#profile-export-mount', '#job-resume-mount'];
+
+const EXPORT_FLOW_HTML = `
+  <div class="export-layout">
+    <div class="export-pick-pane" id="export-pick-pane"></div>
+    <div class="export-preview-pane" id="export-preview-pane">
+      <div class="rp-toolbar">
+        <div class="rp-toolbar-copy">
+          <span class="rp-toolbar-label">Preview</span>
+          <span class="rp-fit-badge"></span>
+        </div>
+        <button id="btn-export-profile-pdf" class="ps-save-btn rp-export-btn">
+          <sl-icon library="lucide" name="download" style="vertical-align:-2px"></sl-icon>
+          Export PDF
+        </button>
+      </div>
+      <div class="rp-viewport">
+        <div class="rp-scale-wrap"><div class="rp-page"></div></div>
+      </div>
+    </div>
+  </div>`;
+
+// Only one mount is ever populated, so the component's internal IDs stay unique
+// and every handler below can keep using getElementById.
+function mountExportFlow(rootSel, { jobId = null } = {}) {
+  for (const sel of EXPORT_MOUNTS) {
+    const el = document.querySelector(sel);
+    if (el && sel !== rootSel) el.innerHTML = '';
+  }
+  const root = document.querySelector(rootSel);
+  if (!root) return false;
+  root.innerHTML = EXPORT_FLOW_HTML;
+  initExportState();
+  exportState.jobId = jobId || null;
+  if (jobId) seedExportFromJob(jobId);
+  renderExportPicker();
+  renderExportPreview();
+  return true;
+}
+
+// Carry over anything already decided for this job: extra skills the user had
+// picked, and any bullet rewrites saved on the job record.
+function seedExportFromJob(jobId) {
+  const job = jobById(jobId);
+  if (!job) return;
+  exportState.extraSkills = new Set(job.resume_extra_skills || []);
+}
+
+// Re-render the flow in place when the underlying analysis/profile changed,
+// without re-mounting (which would reset the user's selections).
+function refreshMountedExportFlow() {
+  if (!document.getElementById('export-pick-pane')) return;
+  renderExportPicker();
+  renderExportPreview();
+}
+
+// Mount inside a job's Resume tab.
+function showJobResumeFlow(job) {
+  if (!job) return;
+  if (!state.profile || !hasProfileData(state.profile)) {
+    const root = document.querySelector('#job-resume-mount');
+    if (root) root.innerHTML = `<div class="empty" style="padding:48px 12px">
+      <sl-icon library="lucide" name="user-round" class="empty-icon"></sl-icon>
+      <div class="empty-title">No profile yet</div>
+      <div class="empty-sub">Add your profile first - a resume is built from it.</div>
+    </div>`;
+    return;
+  }
+  mountExportFlow('#job-resume-mount', { jobId: job.id });
+}
+
 function showProfileExport(jobId = null) {
   if (!state.profile || !hasProfileData(state.profile)) {
     showToast('Add some profile info first.');
     return;
   }
-  initExportState();
-  exportState.jobId = jobId || null;
   renderExportHeader();
-  // The flow lives inside the profile view, so when it's opened from a job the
-  // view has to switch too - otherwise it renders inside a hidden container and
-  // the click looks like it did nothing. switchView forces subview 'main', so
-  // the export subview is selected after it.
   switchView('profile');
   showProfileSubview('export');
-  renderExportPicker();
-  renderExportPreview();
+  mountExportFlow('#profile-export-mount', { jobId: jobId || null });
 }
 
 function renderExportHeader() {
@@ -1522,9 +1595,42 @@ function renderExportPicker() {
     </div>`;
   }).join('');
 
+  // Skills this job asks for that aren't in the profile. Toggling one adds it to
+  // this resume only - the profile is never touched from here.
+  let jobSkillsBlock = '';
+  if (exportState.jobId && exportState.include.skills) {
+    const job = jobById(exportState.jobId);
+    const workspace = job ? buildResumeSkillWorkspace(job) : null;
+    const cands = workspace ? [...workspace.all] : [];
+    // Anything already selected must stay visible even if it is no longer a
+    // current candidate (e.g. picked during an earlier analysis) - otherwise it
+    // sits on the resume with no way to see or remove it.
+    const known = new Set(cands.map(c => c.skill));
+    for (const s of exportState.extraSkills) {
+      if (!known.has(s)) cands.push({ skill: s, tone: 'inferred', reason: 'Added earlier for this job' });
+    }
+    if (cands.length) {
+      const badges = cands.map(item => {
+        const on = exportState.extraSkills.has(item.skill);
+        return `<button type="button" class="export-skill-badge tone-${escAttr(item.tone)} ${on ? 'is-on' : ''}"
+          data-export-skill="${escAttr(item.skill)}" title="${escAttr(item.reason || '')}">
+          ${on ? '✓ ' : '+ '}${escHtml(item.skill)}
+        </button>`;
+      }).join('');
+      jobSkillsBlock = `
+        <section class="export-block">
+          <div class="export-block-title">Skills this job asks for</div>
+          <div class="export-block-note">Not in your profile. Adding one puts it on this resume only.</div>
+          <div class="export-skill-badges">${badges}</div>
+        </section>`;
+    }
+  }
+
   el.innerHTML = `
     <div id="export-budget" class="export-budget"></div>
     <div id="export-dest" class="export-dest"></div>
+
+    ${jobSkillsBlock}
 
     <section class="export-block">
       <div class="export-block-title">Sections &amp; order</div>
@@ -2939,7 +3045,7 @@ async function toggleIgnoredAnalysisSkill(skill) {
   job.analysis_ignored_skills = [...current];
   await syncJobDisplayedScore(job);
   renderJobDetailCards(job);
-  renderResumeSuggestions(job);
+  refreshMountedExportFlow();
   renderJobsDashboard();
 }
 
@@ -2949,7 +3055,7 @@ async function resetIgnoredAnalysisSkills() {
   job.analysis_ignored_skills = [];
   await syncJobDisplayedScore(job);
   renderJobDetailCards(job);
-  renderResumeSuggestions(job);
+  refreshMountedExportFlow();
   renderJobsDashboard();
 }
 
@@ -3391,7 +3497,7 @@ async function extractJobInBackground(url, existingId, placeholderId) {
           await persistJobs();
           if (state.activeJobId === live.id) {
             renderJobDetailCards(live);
-            renderResumeSuggestions(live);
+            refreshMountedExportFlow();
           }
           refreshJobsIfVisible();
         }).catch(() => {}); // enrichment failure is non-fatal; Phase 1 result already saved
@@ -3435,11 +3541,12 @@ function switchDetailTab(name) {
   const job = jobById(state.activeJobId);
   if (job) syncChrome('jobs', { section: 'detail', tab: name, job });
   if (name === 'resume') {
-    if (job) {
-      renderResumeSuggestions(job);
-      renderResumePreview(job);
+    // Mount only when arriving on the tab, so selections survive tab flipping.
+    if (job && !document.querySelector('#job-resume-mount .export-layout')) {
+      showJobResumeFlow(job);
+    } else {
+      scaleAllResumePanes();
     }
-    scaleAllResumePanes();
   }
   updatePaneHeight();
 }
@@ -3468,8 +3575,7 @@ function showJobDetail(id) {
   if (state.browser.port && state.browser.jobId !== id) closeApplicationBrowser();
 
   renderJobDetailCards(job);
-  renderResumeSuggestions(job);
-  renderResumePreview(job);
+  refreshMountedExportFlow();
   loadAnalysisHistory(id).catch(() => {});
   switchDetailTab('analysis');
   showJobsSubview('detail');
@@ -4160,13 +4266,6 @@ function selectedResumeExtraSkills(job) {
   return [...new Set((job?.resume_extra_skills || []).filter(Boolean))];
 }
 
-function buildResumeSelectionContext(job, extraSkills) {
-  const workspace = buildResumeSkillWorkspace(job);
-  const picked = new Set((extraSkills || []).map(normalizeSkillToken).filter(Boolean));
-  return workspace.all
-    .filter(item => picked.has(item.norm))
-    .map(item => ({ skill: item.skill, source: item.source, reason: item.reason }));
-}
 
 async function addSkillToProfile(skill, silent = false) {
   if (!state.profile) return;
@@ -4181,214 +4280,16 @@ async function addSkillToProfile(skill, silent = false) {
   bucket.skills.push(skill);
   await bridge.workspaceWrite(PROFILE_PATH, JSON.stringify(p, null, 2));
   if (!silent) showToast(`"${skill}" added to profile.`);
-  const cb = document.querySelector(`.resume-skill-cb[data-skill="${skill}"]`);
-  if (cb) cb.checked = true;
 }
 
-function renderResumeSuggestions(job) {
-  const el = document.getElementById('resume-actions-pane');
-  if (!el) return;
-  const workspace = buildResumeSkillWorkspace(job);
-  const hasDraft = !!job?.resume_draft;
 
-  const renderSectionActions = section => {
-    const parts = [];
-    if (section.actions.includes('select')) {
-      parts.push(`<button type="button" class="ps-btn-ghost ra-inline-btn" data-resume-bulk="select" data-resume-source="${escAttr(section.key)}">Include all in resume</button>`);
-    }
-    if (section.actions.includes('profile')) {
-      parts.push(`<button type="button" class="ps-btn-ghost ra-inline-btn" data-resume-bulk="profile" data-resume-source="${escAttr(section.key)}">Add all to profile</button>`);
-    }
-    return parts.length ? `<div class="resume-bulk-row">${parts.join('')}</div>` : '';
-  };
 
-  const renderItem = item => `
-    <div class="resume-skill-row ${item.selected ? 'is-selected' : ''}">
-      <div class="resume-skill-main">
-        <span class="resume-skill-badge tone-${escAttr(item.tone)}">${escHtml(item.skill)}</span>
-        <div class="resume-skill-copy">
-          <div class="resume-skill-reason">${escHtml(item.reason)}</div>
-        </div>
-      </div>
-      <div class="resume-skill-controls">
-        <label class="resume-pick" title="Include in next AI draft">
-          <input type="checkbox" class="resume-skill-cb" data-skill="${escAttr(item.skill)}"${item.selected ? ' checked' : ''}>
-          <span>Resume</span>
-        </label>
-        ${item.allowProfile ? `<button type="button" class="rsugg-add-profile ps-btn-ghost" data-skill="${escAttr(item.skill)}">Profile</button>` : ''}
-      </div>
-    </div>`;
 
-  const sectionHtml = workspace.sections.map(section => `
-    <section class="resume-panel">
-      <div class="resume-panel-head">
-        <div>
-          <div class="resume-panel-title">${escHtml(section.title)}</div>
-        </div>
-        <span class="resume-panel-count">${section.items.length}</span>
-      </div>
-      ${renderSectionActions(section)}
-      <div class="resume-skill-list">${section.items.map(renderItem).join('')}</div>
-    </section>`).join('');
 
-  el.innerHTML = `
-    <div class="resume-workspace-hero">
-      <div class="ra-section-head">${mcIcon(MC_ICONS.layers)} Skills for this resume</div>
-      ${workspace.selectedCount ? `<div class="resume-hero-copy">${workspace.selectedCount} extra skill${workspace.selectedCount !== 1 ? 's' : ''} selected for the next draft.</div>` : ''}
-    </div>
 
-    ${sectionHtml || `<div class="resume-panel"><div class="resume-panel-note">No skill suggestions for this role.</div></div>`}
 
-    <section class="resume-panel resume-compose-panel">
-      <div class="resume-panel-head">
-        <div>
-          <div class="resume-panel-title">Draft</div>
-        </div>
-      </div>
-      <div class="ra-actions-stack">
-        <button id="btn-tailor-resume" class="ps-save-btn ra-generate-btn" title="Choose the sections, entries and individual bullets for this role, and rewrite any of them with the job description as context">
-          Pick sections &amp; bullets
-        </button>
-        <button id="btn-compose-resume" class="ps-btn-ghost ra-reanalyze-btn" title="${hasDraft ? 'Let the AI rebuild the whole draft in one pass (uses AI)' : 'Let the AI write a whole draft in one pass (uses AI)'}">
-          ${hasDraft ? 'Auto-generate whole draft' : 'Auto-generate draft'}
-        </button>
-        ${hasDraft ? `<button id="btn-apply-resume-selection" class="ps-btn-ghost ra-reanalyze-btn" title="Update the draft's skill list with your checkbox selections - instant, no AI">Apply Skill Selections</button>` : ''}
-        ${hasDraft ? `<button id="btn-refresh-resume-ai" class="ps-btn-ghost ra-reanalyze-btn" title="Rewrite the summary and bullets of the existing draft (uses AI)">Rewrite with AI</button>` : ''}
-        <button id="btn-clear-resume-skills" class="ps-btn-ghost ra-reanalyze-btn" title="Uncheck every extra skill selected for this draft">Clear Selections</button>
-      </div>
-      <div id="compose-status" class="gen-status hidden"></div>
-    </section>`;
-}
 
-async function runResumeComposition(job, extraSkills, { mode = 'compose' } = {}) {
-  const p = state.profile;
-  const extraSkillContext = buildResumeSelectionContext(job, extraSkills);
-  const reviseExisting = mode === 'refresh_ai';
-  const prompt =
-    `CANDIDATE PROFILE:\n${JSON.stringify(p, null, 2)}\n\n` +
-    `JOB ANALYSIS:\n${JSON.stringify(job.match_result, null, 2)}\n\n` +
-    `JOB DESCRIPTION:\n${job.description}\n\n` +
-    (extraSkills.length ? `EXTRA SKILLS TO INCLUDE IN RESUME:\n${extraSkills.join(', ')}\n\n` : '') +
-    (extraSkillContext.length ? `EXTRA SKILL CONTEXT:\n${JSON.stringify(extraSkillContext, null, 2)}\n\n` : '') +
-    (reviseExisting && job.resume_draft ? `CURRENT RESUME DRAFT:\n${JSON.stringify(job.resume_draft, null, 2)}\n\nRefresh the AI-written wording in this draft. Keep the same overall draft structure unless the supplied evidence makes a stronger wording choice obvious.\n\n` : '') +
-    `Compose a targeted resume draft for: ${[job.title, job.company].filter(Boolean).join(' at ')}`;
-  return runAgentToFile('resume-composer', prompt);
-}
 
-function applyResumeSelectionsToDraft(job) {
-  if (!job?.resume_draft) return false;
-  const extraSkills = selectedResumeExtraSkills(job);
-  const baseSk = job.resume_draft._base_skills || (job.resume_draft.skills || []).filter(s => !extraSkills.includes(s));
-  const merged = [...new Set([...baseSk, ...extraSkills])];
-  job.resume_draft = {
-    ...job.resume_draft,
-    _base_skills: baseSk,
-    skills: merged,
-  };
-  return true;
-}
-
-async function applyResumeSelectionsStatic() {
-  const job = jobById(state.activeJobId);
-  if (!job?.resume_draft) {
-    showToast('Compose a resume first.');
-    return;
-  }
-  job.resume_extra_skills = selectedResumeExtraSkills(job);
-  applyResumeSelectionsToDraft(job);
-  await persistJobs();
-  renderResumeSuggestions(job);
-  renderResumePreview(job);
-  showToast('Applied selected skills to the draft.');
-}
-
-async function composeResume(mode = 'compose') {
-  const job = jobById(state.activeJobId);
-  if (!job) return;
-  if (!state.profile) { const ok = await loadProfile(); if (!ok) { showToast('Add a profile first.'); return; } }
-
-  const extraSkills = selectedResumeExtraSkills(job);
-  job.resume_extra_skills = extraSkills;
-
-  const pane   = document.getElementById('resume-actions-pane');
-  const status = document.getElementById('compose-status');
-  const busyLabel = mode === 'refresh_ai' ? 'Rewriting with AI…' : 'Generating resume…';
-  // Block every draft action (buttons + skill checkboxes) while the model runs.
-  pane?.querySelectorAll('button, input').forEach(el => { el.disabled = true; });
-  const btn = document.getElementById('btn-compose-resume');
-  if (btn) btn.innerHTML = `<sl-spinner style="font-size:13px;--track-width:2px"></sl-spinner> ${busyLabel}`;
-  if (status) {
-    status.textContent = `${busyLabel} This usually takes under a minute.`;
-    status.classList.remove('hidden');
-  }
-  const preview = document.getElementById('resume-preview-content');
-  if (preview) {
-    preview.innerHTML = `<div class="empty resume-preview-empty" style="padding-top:48px">
-      <sl-spinner style="font-size:28px"></sl-spinner>
-      <div class="empty-title" style="margin-top:14px">${busyLabel}</div>
-      <div class="empty-sub">The draft will appear here when it's ready.</div>
-    </div>`;
-  }
-
-  try {
-    const draft = await runResumeComposition(job, extraSkills, { mode });
-    draft._base_skills = (draft.skills || []).filter(s => !extraSkills.includes(s));
-    job.resume_draft = draft;
-    await persistJobs();
-    showToast(mode === 'refresh_ai' ? 'Resume rewritten.' : 'Resume draft ready.');
-  } catch (e) {
-    showToast(`Resume generation failed: ${e.message}`);
-  } finally {
-    // Re-render both panes; this restores enabled controls in every case.
-    renderResumeSuggestions(job);
-    renderResumePreview(job);
-    switchDetailTab('resume');
-  }
-}
-
-async function addAllSkillsToProfile(source = 'inferred') {
-  const job = jobById(state.activeJobId);
-  const workspace = buildResumeSkillWorkspace(job);
-  const items = workspace.all.filter(item => item.source === source && item.allowProfile);
-  if (!items.length) { showToast('No skills in that group can be added to the profile.'); return; }
-  for (const item of items) await addSkillToProfile(item.skill, true);
-  showToast(`Added ${items.length} skill${items.length !== 1 ? 's' : ''} to profile.`);
-}
-
-async function setResumeSkillSelected(skill, checked) {
-  const job = jobById(state.activeJobId);
-  if (!job || !skill) return;
-  const current = new Map(selectedResumeExtraSkills(job).map(item => [normalizeSkillToken(item), item]));
-  const norm = normalizeSkillToken(skill);
-  if (!norm) return;
-  if (checked) current.set(norm, skill);
-  else current.delete(norm);
-  job.resume_extra_skills = [...current.values()];
-  await persistJobs();
-  renderResumeSuggestions(job);
-}
-
-async function includeAllInDraft(source = 'inferred') {
-  const job = jobById(state.activeJobId);
-  const workspace = buildResumeSkillWorkspace(job);
-  const current = new Map(selectedResumeExtraSkills(job).map(item => [normalizeSkillToken(item), item]));
-  const items = workspace.all.filter(item => item.source === source);
-  if (!items.length) { showToast('No skills in that group to include.'); return; }
-  for (const item of items) current.set(item.norm, item.skill);
-  job.resume_extra_skills = [...current.values()];
-  await persistJobs();
-  renderResumeSuggestions(job);
-  showToast(`${items.length} skill${items.length !== 1 ? 's' : ''} queued for the next draft.`);
-}
-
-async function clearResumeSkillSelections() {
-  const job = jobById(state.activeJobId);
-  if (!job) return;
-  job.resume_extra_skills = [];
-  await persistJobs();
-  renderResumeSuggestions(job);
-  showToast('Cleared skill selections.');
-}
 
 // ── Browser health polling (Settings > Browser Account setup session) ───────
 let _browserPollInterval = null;
@@ -4564,34 +4465,6 @@ function renderBrowserProfileSettings() {
 }
 
 // ── Resume Preview tab ────────────────────────────────────────────────────────
-function renderResumePreview(job) {
-  const el = document.getElementById('resume-preview-content');
-  if (!el) return;
-  if (!job.resume_draft) {
-    el.innerHTML = `<div class="empty resume-preview-empty" style="padding-top:48px">
-      <sl-icon library="lucide" name="file-text" class="empty-icon"></sl-icon>
-      <div class="empty-title">No resume draft yet</div>
-      <div class="empty-sub">Click "Generate Resume" in the left panel to preview a tailored resume.</div>
-    </div>`;
-    return;
-  }
-  const draft = job.resume_draft;
-  const p     = state.profile || {};
-  el.innerHTML = `
-    <div class="rp-toolbar">
-      <div class="rp-toolbar-copy">
-        <span class="rp-toolbar-label">Preview</span>
-        <span id="rp-fit-badge" class="rp-fit-badge"></span>
-      </div>
-      <button id="btn-export-pdf" class="ps-save-btn rp-export-btn">
-        <sl-icon library="lucide" name="download" style="vertical-align:-2px"></sl-icon>
-        Export PDF
-      </button>
-    </div>
-    <div class="rp-viewport"><div class="rp-scale-wrap"><div class="rp-page">${renderResumeHTML(draft, p)}</div></div></div>`;
-  renderPageFitBadge(el);
-  scaleResumePage(el);
-}
 
 // Builds a self-contained print HTML from the resume inner content.
 // Opens in a new window that auto-triggers window.print() - zero pip deps.
@@ -4641,43 +4514,6 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 9.5pt; line-height:
 </body></html>`;
 }
 
-async function exportResumePDF() {
-  const job = jobById(state.activeJobId);
-  if (!job?.resume_draft) { showToast('No resume draft to export.'); return; }
-  const p = state.profile || {};
-
-  const slug     = s => (s || '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  const date     = new Date().toISOString().slice(0, 10);
-  const filename = `resume_${slug(job.company)}_${slug(job.title)}_${date}.pdf`;
-
-  const btn       = document.getElementById('btn-export-pdf');
-  const resetBtn  = () => {
-    if (!btn) return;
-    btn.disabled = false;
-    btn.innerHTML = '<sl-icon library="lucide" name="download" style="vertical-align:-2px"></sl-icon> Export PDF';
-  };
-  if (btn) {
-    btn.disabled  = true;
-    btn.innerHTML = '<sl-spinner style="font-size:13px;--track-width:2px"></sl-spinner> Exporting…';
-  }
-
-  try {
-    const html   = buildExportHTML(job.resume_draft, p);
-    const result = await bridge.exportResumePdf(html, filename);
-    if (result?.ok) {
-      showToast(`PDF saved to Downloads: ${result.filename}`);
-    } else {
-      const msg = result?.error || 'unknown error';
-      console.error('[exportResumePDF] bridge error:', msg);
-      showToast(`Export failed: ${msg}`);
-    }
-  } catch (err) {
-    console.error('[exportResumePDF] exception:', err);
-    showToast(`Export error: ${err.message || err}`);
-  } finally {
-    resetBtn();
-  }
-}
 
 // ── One-page contract ────────────────────────────────────────────────────────
 // The preview scales to fit its pane, which visually hides overflow — a resume
@@ -4933,7 +4769,7 @@ async function reAnalyzeJobLegacy() {
     });
     await persistJobs();
     renderJobDetailCards(job);
-    renderResumeSuggestions(job);
+    refreshMountedExportFlow();
     renderJobsDashboard();
     btn.disabled = false; btn.textContent = 'Re-analyze';
 
@@ -4956,7 +4792,7 @@ async function reAnalyzeJobLegacy() {
       await persistJobs();
       removeEnrichingShimmer('detail-match');
       renderJobDetailCards(live);
-      renderResumeSuggestions(live);
+      refreshMountedExportFlow();
       renderJobsDashboard();
       showToast('Re-analysis complete.');
     }).catch(() => {
@@ -5005,7 +4841,7 @@ async function reAnalyzeJob() {
     });
     await persistJobs();
     renderJobDetailCards(job);
-    renderResumeSuggestions(job);
+    refreshMountedExportFlow();
     renderJobsDashboard();
     if (btn) { btn.disabled = false; btn.textContent = 'Refresh AI Analysis'; }
 
@@ -5027,7 +4863,7 @@ async function reAnalyzeJob() {
       await persistJobs();
       removeEnrichingShimmer('detail-match');
       renderJobDetailCards(live);
-      renderResumeSuggestions(live);
+      refreshMountedExportFlow();
       renderJobsDashboard();
       showToast('Re-analysis complete.');
     }).catch(() => {
@@ -5387,10 +5223,15 @@ function wire() {
   document.getElementById('btn-back-from-ingest').addEventListener('click', () => showProfileSubview('main'));
   document.getElementById('btn-export-profile')?.addEventListener('click', () => showProfileExport());
   document.getElementById('btn-back-from-export')?.addEventListener('click', leaveExportFlow);
-  document.getElementById('btn-export-profile-pdf')?.addEventListener('click', exportProfileResumePDF);
+
 
   // ── Export picker interactions ────────────────────────────────────────────
-  const pick = document.getElementById('export-pick-pane');
+  // The component's markup is created at mount time, so these must be delegated
+  // from the static mount hosts - binding to #export-pick-pane at startup left
+  // every handler attached to an element that gets replaced.
+  const exportHosts = EXPORT_MOUNTS
+    .map(sel => document.querySelector(sel)).filter(Boolean);
+  const pick = { addEventListener: (type, fn) => exportHosts.forEach(h => h.addEventListener(type, fn)) };
   pick?.addEventListener('change', e => {
     const sec = e.target.closest('[data-export-section]');
     if (sec) {
@@ -5420,6 +5261,17 @@ function wire() {
     }
   });
   pick?.addEventListener('click', e => {
+    const skillBadge = e.target.closest('[data-export-skill]');
+    if (skillBadge) {
+      const skill = skillBadge.dataset.exportSkill;
+      if (exportState.extraSkills.has(skill)) exportState.extraSkills.delete(skill);
+      else exportState.extraSkills.add(skill);
+      // Remember the choice on the job so it survives leaving the tab.
+      const job = exportState.jobId ? jobById(exportState.jobId) : null;
+      if (job) { job.resume_extra_skills = [...exportState.extraSkills]; persistJobs(); }
+      renderExportPicker(); renderExportPreview();
+      return;
+    }
     const move = e.target.closest('[data-export-move]');
     if (move) {
       const [dir, key] = move.dataset.exportMove.split(':');
@@ -5440,6 +5292,7 @@ function wire() {
       showToast('Original summary restored.');
       return;
     }
+    if (e.target.closest('#btn-export-profile-pdf')) { exportProfileResumePDF(); return; }
     if (e.target.closest('#btn-choose-export-dir')) { chooseExportDir(); return; }
     if (e.target.closest('#btn-clear-export-dir')) {
       setSavedExportDir(''); renderExportDestination(); showToast('Back to Downloads.'); return;
@@ -5667,17 +5520,8 @@ function wire() {
     const tabLink = e.target.closest('.detail-tab-link');
     if (tabLink?.dataset.tab) { switchDetailTab(tabLink.dataset.tab); return; }
 
-    if (e.target.closest('#btn-tailor-resume'))      { showProfileExport(state.activeJobId); return; }
-    if (e.target.closest('#btn-compose-resume'))     { composeResume('compose'); return; }
-    if (e.target.closest('#btn-apply-resume-selection')) { applyResumeSelectionsStatic(); return; }
-    if (e.target.closest('#btn-refresh-resume-ai'))  { composeResume('refresh_ai'); return; }
-    if (e.target.closest('#btn-recompose-resume'))   { composeResume('compose'); return; }
-    if (e.target.closest('#btn-clear-resume-skills')) { clearResumeSkillSelections(); return; }
     if (e.target.closest('#btn-reanalyze-analysis')) { reAnalyzeJob(); return; }
     if (e.target.closest('#btn-reset-ignored-skills')) { resetIgnoredAnalysisSkills(); return; }
-    if (e.target.closest('#btn-export-pdf'))          { exportResumePDF(); return; }
-    if (e.target.closest('#btn-add-all-profile'))     { addAllSkillsToProfile(); return; }
-    if (e.target.closest('#btn-include-all-draft'))   { includeAllInDraft(); return; }
     if (e.target.closest('#btn-confirm-signin'))        { confirmGoogleLogin(); return; }
     if (e.target.closest('#btn-cancel-signin'))         { cancelBrowserSignin(); return; }
     const skillToggle = e.target.closest('[data-analysis-skill]');
@@ -5692,20 +5536,6 @@ function wire() {
     const historyBtn = e.target.closest('.mc-history-open');
     if (historyBtn?.dataset.runId) { openAnalysisSnapshot(historyBtn.dataset.runId); return; }
 
-    const apBtn = e.target.closest('.rsugg-add-profile');
-    if (apBtn?.dataset.skill) { addSkillToProfile(apBtn.dataset.skill); return; }
-    const bulkBtn = e.target.closest('[data-resume-bulk]');
-    if (bulkBtn?.dataset.resumeBulk) {
-      const source = bulkBtn.dataset.resumeSource || 'inferred';
-      if (bulkBtn.dataset.resumeBulk === 'profile') { addAllSkillsToProfile(source); return; }
-      if (bulkBtn.dataset.resumeBulk === 'select')  { includeAllInDraft(source); return; }
-    }
-  });
-  document.getElementById('jobs-detail').addEventListener('change', e => {
-    const resumeCb = e.target.closest('.resume-skill-cb');
-    if (resumeCb?.dataset.skill) {
-      setResumeSkillSelected(resumeCb.dataset.skill, !!resumeCb.checked);
-    }
   });
 
   // Jobs tab - add job form
