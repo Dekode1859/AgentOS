@@ -1138,9 +1138,9 @@ html, body {
   flex-direction: column;
   overflow: hidden;
 }
-#tab-resume.detail-tab-pane:not(.hidden) {
-  overflow: hidden;
-}
+/* No overflow override here on purpose: the resume builder relies on this pane
+   being the scroll container (.detail-tab-pane sets overflow-y: auto above), the
+   way the old resume tab relied on an inner pane scrolling instead. */
 
 /* Resume actions pane: section structure */
 .ra-section-head {
