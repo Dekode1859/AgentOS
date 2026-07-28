@@ -972,7 +972,8 @@ const bridge = (() => {
     removeProviderKey:(pid)          => call('remove_provider_key', pid),
     setDefaultModel:  (pid, mid)     => call('set_default_model', pid, mid),
     openExternal:     (url)          => call('open_external', url),
-    exportResumePdf:  (html, fname)  => call('export_resume_pdf', html, fname),
+    exportResumePdf:  (html, fname, dir) => call('export_resume_pdf', html, fname, dir || ''),
+    openFolderDialog: ()             => call('open_folder_dialog'),
     browserOpen:              (url) => call('browser_open', url),
     browserScrape:            (url) => call('browser_scrape', url),
     browserClose:             ()    => call('browser_close'),
@@ -1217,7 +1218,13 @@ const exportState = {
   include: {},        // { [sectionKey]: bool }
   entries: {},        // { [`exp:${id}`|`proj:${id}`]: bool }
   bullets: {},        // { [`exp:${id}`]: Set(bulletIndex) }
-  rewritten: {},      // { [`exp:${id}:${i}`]: "new text" }
+  rewritten: {},      // { [`exp:${id}:${i}`]: "current text" }
+  // Scratch ledger for this export session only: what each bullet originally
+  // said, every version since, and how many times it changed. It exists so a
+  // rewrite can be told what the other bullets already cover (and what an
+  // earlier attempt already said) instead of blindly restating them. Cleared
+  // when the flow opens and again once a PDF is written.
+  rewriteLog: {},     // { [`exp:${id}:${i}`]: { original, versions: [], count } }
   guiding: null,      // key of the bullet currently showing a guidance box
 };
 
@@ -1245,6 +1252,7 @@ function initExportState() {
   exportState.entries = {};
   exportState.bullets = {};
   exportState.rewritten = {};
+  exportState.rewriteLog = {};
   exportState.guiding = null;
 
   for (const s of EXPORT_SECTIONS) {
@@ -1379,13 +1387,16 @@ function renderExportPicker() {
     const hl = item.highlights || [];
     const rows = hl.map((h, i) => {
       const text = exportBulletText(kind, item.id, i, h);
-      const isRewritten = exportState.rewritten[`${kind}:${item.id}:${i}`] != null;
+      const logK = `${kind}:${item.id}:${i}`;
+      const isRewritten = exportState.rewritten[logK] != null;
+      const changeCount = exportState.rewriteLog[logK]?.count || 0;
       const sel = picked.has(i);
       const gKey = `${kind}:${item.id}:${i}`;
-      return `<div class="export-bullet ${sel ? 'is-on' : ''}">
+      const tooLong = bulletWords(text) > BULLET_WORD_LIMIT;
+      return `<div class="export-bullet ${sel ? 'is-on' : ''} ${tooLong ? 'is-overlong' : ''}">
         <label class="export-bullet-main">
           <input type="checkbox" data-export-bullet="${escAttr(gKey)}"${sel ? ' checked' : ''}>
-          <span class="export-bullet-text">${escHtml(text)}<span class="export-bullet-words">${bulletWords(text)}w</span>${isRewritten ? '<span class="export-rewritten">rewritten</span>' : ''}</span>
+          <span class="export-bullet-text">${escHtml(text)}<span class="export-bullet-words${tooLong ? ' is-over' : ''}" title="${tooLong ? `Over ${BULLET_WORD_LIMIT} words - long bullets are what push the resume onto a second page` : ''}">${bulletWords(text)}w</span>${isRewritten ? `<span class="export-rewritten" title="Original: ${escAttr(exportState.rewriteLog[logK]?.original || '')}">rewritten${changeCount > 1 ? ` ${changeCount}x` : ''}</span>` : ''}</span>
         </label>
         <button type="button" class="export-guide-btn ps-btn-ghost" data-export-guide="${escAttr(gKey)}" title="Rewrite this bullet with a nudge - stays grounded in your saved notes">Rewrite</button>
       </div>
@@ -1414,6 +1425,7 @@ function renderExportPicker() {
 
   el.innerHTML = `
     <div id="export-budget" class="export-budget"></div>
+    <div id="export-dest" class="export-dest"></div>
 
     <section class="export-block">
       <div class="export-block-title">Sections</div>
@@ -1433,6 +1445,7 @@ function renderExportPicker() {
       </section>` : ''}
   `;
   renderExportBudget();
+  renderExportDestination();
 }
 
 async function runGuidedRewrite(gKey) {
@@ -1455,13 +1468,43 @@ async function runGuidedRewrite(gKey) {
     ? `ROLE: ${item.title || ''} at ${item.company || ''}`
     : `PROJECT: ${item.name || ''}`;
 
+  const entryK = entryKey(kind, id);
+  const selected = exportState.bullets[entryK] || new Set();
+  const logKey = `${kind}:${id}:${idx}`;
+  const log = exportState.rewriteLog[logKey];
+
+  // Every sibling bullet, labelled with whether it will actually appear on the
+  // page. Included ones are territory to avoid; excluded ones are content the
+  // candidate dropped, so their substance is fair to absorb here.
+  const siblings = (item.highlights || []).map((h, i) => {
+    if (i === idx) return null;
+    const text = exportBulletText(kind, id, i, h);
+    const mark = selected.has(i) ? 'ON THE PAGE' : 'NOT ON THE PAGE';
+    return `- [${mark}] ${text}`;
+  }).filter(Boolean).join('\n') || '(this entry has no other bullets)';
+
+  const historyBlock = log
+    ? `THIS BULLET HAS ALREADY BEEN REWRITTEN ${log.count} time${log.count === 1 ? '' : 's'}.\n` +
+      `Originally it said:\n  ${log.original}\n` +
+      (log.versions.length > 1
+        ? `Earlier rewrite attempts (do not simply return one of these again):\n${log.versions.slice(0, -1).map(v => `  - ${v}`).join('\n')}\n`
+        : '')
+    : '';
+
   const prompt =
     `${context}\n\n` +
     `THE ONLY FACTS YOU MAY USE - the candidate's own saved notes for this entry:\n` +
     `${item.raw_description || '(none provided)'}\n\n` +
-    `OTHER BULLETS ALREADY ON THIS ENTRY (do not duplicate their angle):\n` +
-    `${(item.highlights || []).filter((_, i) => i !== idx).map(h => `- ${h}`).join('\n') || '(none)'}\n\n` +
-    `CURRENT BULLET:\n${current}\n\n` +
+    `ALL OTHER BULLETS ON THIS ENTRY, and whether each will appear on the resume:\n` +
+    `${siblings}\n\n` +
+    `Rules about those:\n` +
+    `- Do NOT repeat or paraphrase the angle of any bullet marked ON THE PAGE. ` +
+    `The rewritten bullet has to earn its own space next to them.\n` +
+    `- Bullets marked NOT ON THE PAGE were deliberately dropped. If something in ` +
+    `them is worth saving and it fits what is being asked for here, you may fold ` +
+    `that substance into this bullet.\n\n` +
+    historyBlock + '\n' +
+    `CURRENT TEXT OF THE BULLET YOU ARE REWRITING:\n${current}\n\n` +
     (guidance ? `WHAT THE CANDIDATE WANTS IT TO EMPHASISE:\n${guidance}\n\n` : '') +
     `Rewrite this ONE bullet. Return it as the single item in "highlights". ` +
     `Leave "description", "tech" and "tags" empty. ` +
@@ -1473,7 +1516,16 @@ async function runGuidedRewrite(gKey) {
     const result = await runAgentToFile('profile-writer', prompt);
     const fresh = (result.highlights || []).filter(Boolean)[0];
     if (!fresh) throw new Error('nothing returned');
-    exportState.rewritten[`${kind}:${id}:${idx}`] = fresh;
+    // Record before overwriting so "original" survives repeated rewrites.
+    const entry = exportState.rewriteLog[logKey] || {
+      original: (item.highlights || [])[idx] || '',
+      versions: [],
+      count: 0,
+    };
+    entry.versions.push(fresh);
+    entry.count += 1;
+    exportState.rewriteLog[logKey] = entry;
+    exportState.rewritten[logKey] = fresh;
     // Selecting it is the obvious intent after a rewrite.
     const k = entryKey(kind, id);
     (exportState.bullets[k] = exportState.bullets[k] || new Set()).add(idx);
@@ -1484,6 +1536,41 @@ async function runGuidedRewrite(gKey) {
   } catch (e) {
     if (status) status.textContent = `Rewrite failed: ${e.message}`;
     if (runBtn) runBtn.disabled = false;
+  }
+}
+
+// Remembered between sessions so repeat exports don't re-ask. Empty = Downloads.
+const EXPORT_DIR_KEY = 'export-dir';
+function savedExportDir() { try { return localStorage.getItem(EXPORT_DIR_KEY) || ''; } catch (_) { return ''; } }
+function setSavedExportDir(dir) { try { localStorage.setItem(EXPORT_DIR_KEY, dir || ''); } catch (_) {} }
+
+function renderExportDestination() {
+  const el = document.getElementById('export-dest');
+  if (!el) return;
+  const dir = savedExportDir();
+  el.innerHTML = `
+    <span class="export-dest-label">Save to</span>
+    <span class="export-dest-path" title="${escAttr(dir || 'Your Downloads folder')}">${escHtml(dir || 'Downloads')}</span>
+    <button type="button" class="ps-btn-ghost export-dest-btn" id="btn-choose-export-dir">Change…</button>
+    ${dir ? `<button type="button" class="ps-btn-ghost export-dest-btn" id="btn-clear-export-dir" title="Go back to the Downloads folder">Reset</button>` : ''}`;
+}
+
+async function chooseExportDir() {
+  try {
+    const dir = await bridge.openFolderDialog();
+    // The bridge returns a path string on success, but surfaces failures as an
+    // {ok:false,error} object — storing that as a path would silently break
+    // every later export.
+    if (typeof dir !== 'string') {
+      showToast(`Could not open the folder picker: ${dir?.error || 'unavailable'}`);
+      return;
+    }
+    if (!dir) return;   // user cancelled
+    setSavedExportDir(dir);
+    renderExportDestination();
+    showToast('Export folder set.');
+  } catch (e) {
+    showToast(`Could not open the folder picker: ${e.message}`);
   }
 }
 
@@ -1504,9 +1591,14 @@ async function exportProfileResumePDF() {
     const filename = `${name.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')}_Resume.pdf`;
     const html = buildExportHTML(buildExportDraft(), exportProfileView(),
       { expEntries: 0, expBullets: 0, projEntries: 0, projBullets: 0 });
-    const res = await bridge.exportResumePdf(html, filename);
-    if (res?.ok) showToast(`Saved to Downloads: ${res.filename}`);
-    else showToast(`Export failed: ${res?.error || 'unknown error'}`);
+    const res = await bridge.exportResumePdf(html, filename, savedExportDir());
+    if (res?.ok) {
+      showToast(`Saved: ${res.path || res.filename}`);
+      // The rewrite ledger is scratch context for one export session only.
+      exportState.rewriteLog = {};
+    } else {
+      showToast(`Export failed: ${res?.error || 'unknown error'}`);
+    }
   } catch (e) {
     showToast(`Export failed: ${e.message}`);
   } finally {
@@ -4459,6 +4551,7 @@ const RESUME_LIMITS = {
   expEntries: 3, expBullets: 4,
   projEntries: 3, projBullets: 2,
   eduEntries: 0,        // 0 = no limit
+  certEntries: 0,
   pubEntries: 0,
 };
 
@@ -4509,7 +4602,10 @@ function renderResumeHTML(draft, p, limits = {}) {
     const company = pe.company || '';
     const title   = pe.title   || '';
     const dates   = [pe.start, pe.end].filter(Boolean).join(' – ');
-    const bullets = cap(exp.bullets?.length ? exp.bullets : pe.highlights, L.expBullets);
+    // `undefined` means "caller didn't specify, use the profile"; an empty array
+    // means "the caller deliberately chose none". Collapsing those two is what
+    // let de-selected bullets reappear in the export.
+    const bullets = cap(exp.bullets != null ? exp.bullets : pe.highlights, L.expBullets);
     return `<div class="rp-entry">
       <div class="rp-entry-head">
         <span class="rp-exp-label"><strong>${escHtml(company)}</strong> - ${escHtml(title)}</span>
@@ -4525,7 +4621,7 @@ function renderResumeHTML(draft, p, limits = {}) {
     const name    = pp.name  || '';
     const url     = pp.url   || '';
     const tech    = (pp.tech || []).join(', ');
-    const bullets = cap(pr.bullets?.length ? pr.bullets : pp.highlights, L.projBullets);
+    const bullets = cap(pr.bullets != null ? pr.bullets : pp.highlights, L.projBullets);
     const nameEl  = url
       ? `<a class="rp-proj-name" href="${escAttr(url)}" target="_blank">${escHtml(name)}</a>`
       : `<span class="rp-proj-name-plain">${escHtml(name)}</span>`;
@@ -4561,19 +4657,32 @@ function renderResumeHTML(draft, p, limits = {}) {
   }).join('');
   const pubBody = pubItems ? `<ol class="rp-pub-list">${pubItems}</ol>` : '';
 
+  // ── Certifications: entirely from profile ─────────────────────────────────
+  const certItems = cap(p.certifications, L.certEntries).map(c => {
+    const cert = typeof c === 'string' ? { name: c } : (c || {});
+    const meta = [cert.issuer, cert.year].filter(Boolean).join(' ');
+    return cert.name
+      ? `<li class="rp-pub-item"><span class="rp-pub-title">${escHtml(cert.name)}</span>${meta ? `<span class="rp-pub-venue"><em>${escHtml(meta)}</em></span>` : ''}</li>`
+      : '';
+  }).filter(Boolean).join('');
+  const certBody = certItems ? `<ol class="rp-pub-list">${certItems}</ol>` : '';
+
+  // Same undefined-vs-empty rule as bullets: only fall back to the profile
+  // summary when the caller left it unspecified.
+  const summaryText = draft.summary != null ? draft.summary : (id.summary || '');
+
   return `
     <div class="rp-header">
       <div class="rp-name">${escHtml(id.name || 'Your Name')}</div>
       ${contactParts.length ? `<div class="rp-contact">${contactParts.join(' | ')}</div>` : ''}
     </div>
-    ${draft.summary
-      ? sec('Profile', `<p class="rp-prose">${escHtml(draft.summary)}</p>`)
-      : (id.summary ? sec('Profile', `<p class="rp-prose">${escHtml(id.summary)}</p>`) : '')}
+    ${summaryText ? sec('Profile', `<p class="rp-prose">${escHtml(summaryText)}</p>`) : ''}
     ${sec('Work Experience', expBody)}
     ${sec('Projects', projBody)}
     ${sec('Skills', skillsBody)}
     ${sec('Education', eduBody)}
     ${pubBody ? sec('Publications', pubBody) : ''}
+    ${certBody ? sec('Certifications', certBody) : ''}
   `;
 }
 
@@ -5092,6 +5201,10 @@ function wire() {
     }
   });
   pick?.addEventListener('click', e => {
+    if (e.target.closest('#btn-choose-export-dir')) { chooseExportDir(); return; }
+    if (e.target.closest('#btn-clear-export-dir')) {
+      setSavedExportDir(''); renderExportDestination(); showToast('Back to Downloads.'); return;
+    }
     const guide = e.target.closest('[data-export-guide]');
     if (guide) {
       const key = guide.dataset.exportGuide;
@@ -5108,6 +5221,7 @@ function wire() {
     const reset = e.target.closest('[data-export-guide-reset]');
     if (reset) {
       delete exportState.rewritten[reset.dataset.exportGuideReset];
+      delete exportState.rewriteLog[reset.dataset.exportGuideReset];
       exportState.guiding = null;
       renderExportPicker(); renderExportPreview();
       showToast('Original bullet restored.');
