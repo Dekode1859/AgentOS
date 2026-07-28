@@ -1358,6 +1358,130 @@ html, body {
   }
 }
 
+/* ── Profile resume export ────────────────────────────────────────────────── */
+.view-header-actions { display: flex; gap: 8px; align-items: center; }
+
+.export-layout {
+  display: grid;
+  grid-template-columns: minmax(340px, 440px) 1fr;
+  gap: 18px;
+  height: var(--pane-h, 620px);
+  min-height: 420px;
+}
+.export-pick-pane {
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+.export-preview-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Live page budget */
+.export-budget {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 10px 13px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  border: 1px solid var(--border);
+  background: var(--surface-2, #16161c);
+}
+.export-budget.is-fit  { border-color: rgba(62,207,142,0.45); color: var(--text); }
+.export-budget.is-over { border-color: rgba(229,115,115,0.55); color: #ffb4b4; }
+
+.export-block { margin-bottom: 18px; }
+.export-block-title {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--dim); font-weight: 700; margin-bottom: 8px;
+}
+
+.export-toggles { display: flex; flex-wrap: wrap; gap: 7px; }
+.export-toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 11px; border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 12.5px; color: var(--muted); cursor: pointer;
+}
+.export-toggle.is-on { border-color: var(--accent); color: var(--text); background: rgba(79,142,247,0.10); }
+.export-toggle input { accent-color: var(--accent); }
+
+.export-entry {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 9px;
+  background: rgba(255,255,255,0.02);
+}
+.export-entry.is-off { opacity: 0.55; }
+.export-entry-head {
+  display: flex; align-items: center; gap: 9px; cursor: pointer;
+}
+.export-entry-name { flex: 1; font-size: 13px; font-weight: 600; color: var(--text); }
+.export-entry-count { font-size: 11px; color: var(--dim); flex-shrink: 0; }
+.export-entry-empty { font-size: 12px; color: var(--dim); margin-top: 7px; }
+
+.export-bullets { margin-top: 9px; display: flex; flex-direction: column; gap: 4px; }
+.export-bullet {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 8px; border-radius: 7px;
+  border: 1px solid transparent;
+}
+.export-bullet.is-on { border-color: rgba(79,142,247,0.30); background: rgba(79,142,247,0.06); }
+.export-bullet-main { display: flex; align-items: flex-start; gap: 8px; flex: 1; cursor: pointer; min-width: 0; }
+.export-bullet-main input { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
+.export-bullet-text { font-size: 12.5px; line-height: 1.5; color: var(--text); }
+.export-bullet-words {
+  font-size: 10px; color: var(--dim); margin-left: 7px;
+  border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; white-space: nowrap;
+}
+.export-rewritten {
+  font-size: 10px; color: var(--accent); margin-left: 6px;
+  border: 1px solid rgba(79,142,247,0.4); border-radius: 4px; padding: 0 4px;
+}
+.export-guide-btn { padding: 3px 9px; font-size: 11.5px; flex-shrink: 0; }
+
+.export-guide-box {
+  margin: 4px 0 8px 26px;
+  padding: 10px;
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  background: rgba(79,142,247,0.06);
+}
+.export-guide-actions { display: flex; gap: 7px; margin-top: 8px; }
+.export-guide-status { margin-top: 7px; }
+
+/* Fit badge (shared by both resume previews) */
+.rp-fit-badge {
+  font-size: 11px; font-weight: 600; padding: 2px 9px;
+  border-radius: 999px; border: 1px solid var(--border); color: var(--muted);
+  white-space: nowrap;
+}
+.rp-fit-badge.is-fit  { color: #3ecf8e; border-color: rgba(62,207,142,0.45); }
+.rp-fit-badge.is-over { color: #ffb4b4; border-color: rgba(229,115,115,0.55); }
+
+/* Over-long bullet warning in the Write-with-AI panel */
+.ai-draft-bullets li.is-overlong { color: #ffb4b4; }
+.ai-bullet-words {
+  font-size: 10px; color: var(--dim); margin-left: 7px;
+  border: 1px solid var(--border); border-radius: 4px; padding: 0 4px;
+}
+.ai-draft-warn {
+  margin-top: 8px; font-size: 11.5px; color: #ffb4b4;
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+}
+.ai-rerun-btn { padding: 3px 10px; font-size: 11.5px; }
+
+@media (max-width: 1100px) {
+  .export-layout { grid-template-columns: 1fr; height: auto; }
+}
+
 /* ── Profile strength ─────────────────────────────────────────────────────── */
 .pstrength {
   border: 1px solid var(--border);
@@ -1513,7 +1637,7 @@ html, body {
   justify-content: center;
   align-items: flex-start;
 }
-#rp-scale-wrap { flex-shrink: 0; }
+.rp-scale-wrap { flex-shrink: 0; }
 .rp-page {
   width: 816px;
   min-height: 200px;
@@ -2099,7 +2223,7 @@ body::before {
 }
 
 .resume-preview-empty,
-#rp-scale-wrap {
+.rp-scale-wrap {
   background: transparent;
 }
 

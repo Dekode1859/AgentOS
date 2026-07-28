@@ -89,9 +89,14 @@
                 <h1>Profile</h1>
                 <p class="view-sub">Your master profile - every role, skill, and project in one place.</p>
               </div>
-              <sl-button id="btn-add-info">
-                <sl-icon slot="prefix" library="lucide" name="plus"></sl-icon> Add Info
-              </sl-button>
+              <div class="view-header-actions">
+                <sl-button id="btn-add-info">
+                  <sl-icon slot="prefix" library="lucide" name="plus"></sl-icon> Add Info
+                </sl-button>
+                <sl-button id="btn-export-profile" variant="primary">
+                  <sl-icon slot="prefix" library="lucide" name="file-down"></sl-icon> Export Resume
+                </sl-button>
+              </div>
             </div>
           </header>
           <div id="profile-empty-state" class="empty">
@@ -130,6 +135,38 @@
               Add to Profile
             </sl-button>
             <div id="gen-status" class="gen-status hidden"></div>
+          </div>
+        </div>
+
+        <div id="profile-export" class="hidden">
+          <header class="view-header">
+            <button class="back-btn" id="btn-back-from-export">
+              <sl-icon library="lucide" name="arrow-left"></sl-icon> Profile
+            </button>
+            <div class="view-header-row">
+              <div>
+                <h1>Export Resume</h1>
+                <p class="view-sub">Pick what goes on the page. Not tied to any job.</p>
+              </div>
+            </div>
+          </header>
+          <div class="export-layout">
+            <div class="export-pick-pane" id="export-pick-pane"></div>
+            <div class="export-preview-pane" id="export-preview-pane">
+              <div class="rp-toolbar">
+                <div class="rp-toolbar-copy">
+                  <span class="rp-toolbar-label">Preview</span>
+                  <span class="rp-fit-badge"></span>
+                </div>
+                <button id="btn-export-profile-pdf" class="ps-save-btn rp-export-btn">
+                  <sl-icon library="lucide" name="download" style="vertical-align:-2px"></sl-icon>
+                  Export PDF
+                </button>
+              </div>
+              <div class="rp-viewport">
+                <div class="rp-scale-wrap"><div class="rp-page"></div></div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

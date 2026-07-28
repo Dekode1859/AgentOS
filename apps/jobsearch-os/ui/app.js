@@ -1064,8 +1064,8 @@ async function gatherResumeText() {
 
 // ── Profile: sub-view ────────────────────────────────────────────────────────
 function showProfileSubview(name) {
-  ['main', 'ingest'].forEach(n =>
-    document.getElementById(`profile-${n}`).classList.toggle('hidden', n !== name));
+  ['main', 'ingest', 'export'].forEach(n =>
+    document.getElementById(`profile-${n}`)?.classList.toggle('hidden', n !== name));
   syncChrome('profile', { section: name });
 }
 
@@ -1205,6 +1205,313 @@ function renderProfileSections() {
   empty.classList.add('hidden'); sections.classList.remove('hidden');
   sections.innerHTML = renderProfileStrength(p) +
     Object.keys(SECTION_META).map(renderSection).join('');
+}
+
+// ── Profile-based resume export ──────────────────────────────────────────────
+// A resume built from the profile alone, with no job attached. You choose which
+// entries and which individual bullets go on the page, and the preview tells you
+// live whether it still fits one page. Bullets can be rewritten with AI, but
+// only ever grounded in the raw notes already stored on that entry — the model
+// is never given licence to invent a new claim here.
+const exportState = {
+  include: {},        // { [sectionKey]: bool }
+  entries: {},        // { [`exp:${id}`|`proj:${id}`]: bool }
+  bullets: {},        // { [`exp:${id}`]: Set(bulletIndex) }
+  rewritten: {},      // { [`exp:${id}:${i}`]: "new text" }
+  guiding: null,      // key of the bullet currently showing a guidance box
+};
+
+const EXPORT_SECTIONS = [
+  { key: 'summary',        label: 'Profile summary' },
+  { key: 'experience',     label: 'Work experience' },
+  { key: 'projects',       label: 'Projects' },
+  { key: 'skills',         label: 'Skills' },
+  { key: 'education',      label: 'Education' },
+  { key: 'publications',   label: 'Publications' },
+  { key: 'certifications', label: 'Certifications' },
+];
+
+function entryKey(kind, id) { return `${kind}:${id}`; }
+
+// Effective bullet text for an entry: a rewritten version if one exists,
+// otherwise the stored highlight.
+function exportBulletText(kind, id, idx, original) {
+  return exportState.rewritten[`${kind}:${id}:${idx}`] ?? original;
+}
+
+function initExportState() {
+  const p = state.profile || {};
+  exportState.include = {};
+  exportState.entries = {};
+  exportState.bullets = {};
+  exportState.rewritten = {};
+  exportState.guiding = null;
+
+  for (const s of EXPORT_SECTIONS) {
+    // Default on for anything that actually has content.
+    const has = {
+      summary: !!(p.identity || {}).summary,
+      experience: (p.experience || []).length > 0,
+      projects: (p.projects || []).length > 0,
+      skills: (p.skill_buckets || []).length > 0,
+      education: (p.education || []).length > 0,
+      publications: (p.publications || []).length > 0,
+      certifications: (p.certifications || []).length > 0,
+    }[s.key];
+    exportState.include[s.key] = !!has;
+  }
+
+  // Start from the same shape the one-page layout expects: all roles with their
+  // first few bullets, projects kept tighter.
+  (p.experience || []).forEach((e, i) => {
+    const k = entryKey('exp', e.id);
+    exportState.entries[k] = i < RESUME_LIMITS.expEntries;
+    exportState.bullets[k] = new Set(
+      (e.highlights || []).map((_, bi) => bi).slice(0, RESUME_LIMITS.expBullets));
+  });
+  (p.projects || []).forEach((pr, i) => {
+    const k = entryKey('proj', pr.id);
+    exportState.entries[k] = i < RESUME_LIMITS.projEntries;
+    exportState.bullets[k] = new Set(
+      (pr.highlights || []).map((_, bi) => bi).slice(0, RESUME_LIMITS.projBullets));
+  });
+}
+
+// Turn the selection into the same draft shape renderResumeHTML already
+// consumes, so the export path reuses the exact renderer and PDF pipeline the
+// job-specific resume uses. Caps are disabled here because the selection IS the
+// cap — otherwise the renderer would silently drop what you deliberately chose.
+function buildExportDraft() {
+  const p = state.profile || {};
+  const inc = exportState.include;
+
+  const experience = (p.experience || [])
+    .filter(e => exportState.entries[entryKey('exp', e.id)])
+    .map(e => {
+      const k = entryKey('exp', e.id);
+      const picked = [...(exportState.bullets[k] || new Set())].sort((a, b) => a - b);
+      return { id: e.id, bullets: picked.map(i => exportBulletText('exp', e.id, i, (e.highlights || [])[i])).filter(Boolean) };
+    });
+
+  const projects = (p.projects || [])
+    .filter(pr => exportState.entries[entryKey('proj', pr.id)])
+    .map(pr => {
+      const k = entryKey('proj', pr.id);
+      const picked = [...(exportState.bullets[k] || new Set())].sort((a, b) => a - b);
+      return { id: pr.id, bullets: picked.map(i => exportBulletText('proj', pr.id, i, (pr.highlights || [])[i])).filter(Boolean) };
+    });
+
+  return {
+    summary: inc.summary ? (p.identity || {}).summary || '' : '',
+    skills: inc.skills ? (p.skill_buckets || []).flatMap(b => b.skills || []) : [],
+    experience: inc.experience ? experience : [],
+    projects: inc.projects ? projects : [],
+  };
+}
+
+// The renderer pulls education/publications straight from the profile, so to
+// honour the include toggles we hand it a shallow copy with those emptied out.
+function exportProfileView() {
+  const p = state.profile || {};
+  const inc = exportState.include;
+  return {
+    ...p,
+    education: inc.education ? p.education : [],
+    publications: inc.publications ? p.publications : [],
+    certifications: inc.certifications ? p.certifications : [],
+  };
+}
+
+function renderExportPreview() {
+  const pane = document.getElementById('export-preview-pane');
+  const page = pane?.querySelector('.rp-page');
+  if (!page) return;
+  page.innerHTML = renderResumeHTML(buildExportDraft(), exportProfileView(),
+    { expEntries: 0, expBullets: 0, projEntries: 0, projBullets: 0 });
+  renderPageFitBadge(pane);
+  scaleResumePage(pane);
+  renderExportBudget();
+}
+
+// Live budget line: how full the page is, and how many bullets are selected.
+function renderExportBudget() {
+  const el = document.getElementById('export-budget');
+  const pane = document.getElementById('export-preview-pane');
+  if (!el || !pane) return;
+  const fit = measurePageFit(pane);
+  if (!fit) return;
+  const total = Object.values(exportState.bullets)
+    .reduce((n, set) => n + (set ? set.size : 0), 0);
+  el.className = `export-budget ${fit.fits ? 'is-fit' : 'is-over'}`;
+  el.innerHTML = fit.fits
+    ? `<strong>${fit.pct}%</strong> of one page used · ${total} bullet${total === 1 ? '' : 's'} selected`
+    : `<strong>Over one page</strong> by ${Math.round(((fit.height - fit.limit) / fit.limit) * 100)}% · remove a bullet or an entry`;
+}
+
+function showProfileExport() {
+  if (!state.profile || !hasProfileData(state.profile)) {
+    showToast('Add some profile info first.');
+    return;
+  }
+  initExportState();
+  showProfileSubview('export');
+  renderExportPicker();
+  renderExportPreview();
+}
+
+function renderExportPicker() {
+  const el = document.getElementById('export-pick-pane');
+  if (!el) return;
+  const p = state.profile || {};
+
+  const sectionToggles = EXPORT_SECTIONS.map(s => {
+    const on = !!exportState.include[s.key];
+    return `<label class="export-toggle ${on ? 'is-on' : ''}">
+      <input type="checkbox" data-export-section="${escAttr(s.key)}"${on ? ' checked' : ''}>
+      <span>${escHtml(s.label)}</span>
+    </label>`;
+  }).join('');
+
+  const entryBlock = (kind, items, nameOf) => items.map(item => {
+    const k = entryKey(kind, item.id);
+    const on = !!exportState.entries[k];
+    const picked = exportState.bullets[k] || new Set();
+    const hl = item.highlights || [];
+    const rows = hl.map((h, i) => {
+      const text = exportBulletText(kind, item.id, i, h);
+      const isRewritten = exportState.rewritten[`${kind}:${item.id}:${i}`] != null;
+      const sel = picked.has(i);
+      const gKey = `${kind}:${item.id}:${i}`;
+      return `<div class="export-bullet ${sel ? 'is-on' : ''}">
+        <label class="export-bullet-main">
+          <input type="checkbox" data-export-bullet="${escAttr(gKey)}"${sel ? ' checked' : ''}>
+          <span class="export-bullet-text">${escHtml(text)}<span class="export-bullet-words">${bulletWords(text)}w</span>${isRewritten ? '<span class="export-rewritten">rewritten</span>' : ''}</span>
+        </label>
+        <button type="button" class="export-guide-btn ps-btn-ghost" data-export-guide="${escAttr(gKey)}" title="Rewrite this bullet with a nudge - stays grounded in your saved notes">Rewrite</button>
+      </div>
+      ${exportState.guiding === gKey ? `
+        <div class="export-guide-box">
+          <input class="field-input export-guide-input" placeholder="What should it emphasise? e.g. lead with the scale, or name the outcome" />
+          <div class="export-guide-actions">
+            <button type="button" class="ai-apply-btn" data-export-guide-run="${escAttr(gKey)}">Rewrite</button>
+            <button type="button" class="ps-btn-ghost" data-export-guide-cancel="1">Cancel</button>
+            ${isRewritten ? `<button type="button" class="ps-btn-ghost" data-export-guide-reset="${escAttr(gKey)}">Restore original</button>` : ''}
+          </div>
+          <div class="export-guide-status gen-status hidden"></div>
+        </div>` : ''}`;
+    }).join('');
+
+    return `<div class="export-entry ${on ? '' : 'is-off'}">
+      <label class="export-entry-head">
+        <input type="checkbox" data-export-entry="${escAttr(k)}"${on ? ' checked' : ''}>
+        <span class="export-entry-name">${escHtml(nameOf(item))}</span>
+        <span class="export-entry-count">${picked.size}/${hl.length}</span>
+      </label>
+      ${on && hl.length ? `<div class="export-bullets">${rows}</div>` : ''}
+      ${on && !hl.length ? `<div class="export-entry-empty">No bullets yet - add some in the profile first.</div>` : ''}
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div id="export-budget" class="export-budget"></div>
+
+    <section class="export-block">
+      <div class="export-block-title">Sections</div>
+      <div class="export-toggles">${sectionToggles}</div>
+    </section>
+
+    ${exportState.include.experience ? `
+      <section class="export-block">
+        <div class="export-block-title">Experience</div>
+        ${entryBlock('exp', p.experience || [], e => [e.title, e.company].filter(Boolean).join(' · ') || 'Untitled role')}
+      </section>` : ''}
+
+    ${exportState.include.projects ? `
+      <section class="export-block">
+        <div class="export-block-title">Projects</div>
+        ${entryBlock('proj', p.projects || [], pr => pr.name || 'Untitled project')}
+      </section>` : ''}
+  `;
+  renderExportBudget();
+}
+
+async function runGuidedRewrite(gKey) {
+  const [kind, id, idxStr] = gKey.split(':');
+  const idx = Number(idxStr);
+  const p = state.profile || {};
+  const list = kind === 'exp' ? (p.experience || []) : (p.projects || []);
+  const item = list.find(x => String(x.id) === String(id));
+  if (!item) return;
+
+  const box = document.querySelector(`[data-export-guide-run="${gKey}"]`)?.closest('.export-guide-box');
+  const guidance = box?.querySelector('.export-guide-input')?.value.trim() || '';
+  const status = box?.querySelector('.export-guide-status');
+  const runBtn = box?.querySelector(`[data-export-guide-run]`);
+  if (runBtn) runBtn.disabled = true;
+  if (status) { status.textContent = 'Rewriting…'; status.classList.remove('hidden'); }
+
+  const current = exportBulletText(kind, id, idx, (item.highlights || [])[idx]);
+  const context = kind === 'exp'
+    ? `ROLE: ${item.title || ''} at ${item.company || ''}`
+    : `PROJECT: ${item.name || ''}`;
+
+  const prompt =
+    `${context}\n\n` +
+    `THE ONLY FACTS YOU MAY USE - the candidate's own saved notes for this entry:\n` +
+    `${item.raw_description || '(none provided)'}\n\n` +
+    `OTHER BULLETS ALREADY ON THIS ENTRY (do not duplicate their angle):\n` +
+    `${(item.highlights || []).filter((_, i) => i !== idx).map(h => `- ${h}`).join('\n') || '(none)'}\n\n` +
+    `CURRENT BULLET:\n${current}\n\n` +
+    (guidance ? `WHAT THE CANDIDATE WANTS IT TO EMPHASISE:\n${guidance}\n\n` : '') +
+    `Rewrite this ONE bullet. Return it as the single item in "highlights". ` +
+    `Leave "description", "tech" and "tags" empty. ` +
+    `Every claim must be supported by the notes above - if the requested emphasis ` +
+    `is not supported by them, write the closest thing that IS supported rather ` +
+    `than inventing it.`;
+
+  try {
+    const result = await runAgentToFile('profile-writer', prompt);
+    const fresh = (result.highlights || []).filter(Boolean)[0];
+    if (!fresh) throw new Error('nothing returned');
+    exportState.rewritten[`${kind}:${id}:${idx}`] = fresh;
+    // Selecting it is the obvious intent after a rewrite.
+    const k = entryKey(kind, id);
+    (exportState.bullets[k] = exportState.bullets[k] || new Set()).add(idx);
+    exportState.guiding = null;
+    renderExportPicker();
+    renderExportPreview();
+    showToast('Bullet rewritten.');
+  } catch (e) {
+    if (status) status.textContent = `Rewrite failed: ${e.message}`;
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+
+async function exportProfileResumePDF() {
+  const pane = document.getElementById('export-preview-pane');
+  const page = pane?.querySelector('.rp-page');
+  if (!page) return;
+  const fit = measurePageFit(pane);
+  if (fit && !fit.fits &&
+      !confirm(`This is ${Math.round(((fit.height - fit.limit) / fit.limit) * 100)}% over one page and will spill onto a second page.\n\nExport anyway?`)) {
+    return;
+  }
+  const btn = document.getElementById('btn-export-profile-pdf');
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<sl-spinner style="font-size:13px;--track-width:2px"></sl-spinner> Exporting…'; }
+  try {
+    const name = ((state.profile || {}).identity || {}).name || 'resume';
+    const filename = `${name.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')}_Resume.pdf`;
+    const html = buildExportHTML(buildExportDraft(), exportProfileView(),
+      { expEntries: 0, expBullets: 0, projEntries: 0, projBullets: 0 });
+    const res = await bridge.exportResumePdf(html, filename);
+    if (res?.ok) showToast(`Saved to Downloads: ${res.filename}`);
+    else showToast(`Export failed: ${res?.error || 'unknown error'}`);
+  } catch (e) {
+    showToast(`Export failed: ${e.message}`);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
 }
 
 // ── Profile strength ─────────────────────────────────────────────────────────
@@ -1385,7 +1692,7 @@ const SECTION_VIEWS = {
     return eds.map(ed => `
         <div class="ps-list-item">
           <div class="entry-title">${escHtml(ed.degree||'')}</div>
-          <div class="entry-sub">${escHtml([ed.institution,ed.year].filter(Boolean).join(' · '))}</div>
+          <div class="entry-sub">${escHtml([ed.institution, ed.year, ed.cgpa ? `CGPA: ${ed.cgpa}` : ''].filter(Boolean).join(' · '))}</div>
         </div>`).join('');
   },
   certifications: (p) => {
@@ -1485,6 +1792,7 @@ const SECTION_EDITS = {
                 <input class="field-input" data-subfield="degree" placeholder="Degree" value="${escAttr(ed.degree||'')}"/>
                 <input class="field-input" data-subfield="institution" placeholder="Institution" value="${escAttr(ed.institution||'')}"/>
                 <input class="field-input" data-subfield="year" placeholder="Year" value="${escAttr(ed.year||'')}"/>
+                <input class="field-input" data-subfield="cgpa" placeholder="CGPA / GPA (optional)" value="${escAttr(ed.cgpa||'')}"/>
               </div>
               <button class="ps-remove-edu ps-btn-icon">×</button>
             </div>`).join('')}
@@ -1656,10 +1964,17 @@ async function writeWithAI(kind, idx) {
   }
 }
 
+// A bullet past this length reliably breaks the one-page resume, and it's the
+// tell of a padded line. The model is told 25; this is the deterministic check,
+// because prompt compliance varies run to run.
+const BULLET_WORD_LIMIT = 25;
+const bulletWords = (b) => String(b || '').trim().split(/\s+/).filter(Boolean).length;
+
 function renderAIDraftPanel(wrap, kind, result) {
   const panel = wrap.querySelector('.ai-draft-panel');
   if (!panel) return;
   const bullets = (result.highlights || []).filter(Boolean);
+  const overLong = bullets.filter(b => bulletWords(b) > BULLET_WORD_LIMIT).length;
   const tech = (result.tech || []).filter(Boolean);
   const tags = (result.tags || []).filter(Boolean);
 
@@ -1676,7 +1991,15 @@ function renderAIDraftPanel(wrap, kind, result) {
     ${bullets.length ? `
       <div class="ai-draft-block">
         <div class="ai-draft-label">Bullets</div>
-        <ul class="ai-draft-bullets">${bullets.map(b => `<li>${escHtml(b)}</li>`).join('')}</ul>
+        <ul class="ai-draft-bullets">${bullets.map(b => {
+          const w = bulletWords(b);
+          const over = w > BULLET_WORD_LIMIT;
+          return `<li class="${over ? 'is-overlong' : ''}">${escHtml(b)}<span class="ai-bullet-words">${w}w</span></li>`;
+        }).join('')}</ul>
+        ${overLong ? `<div class="ai-draft-warn">
+          ${overLong} bullet${overLong > 1 ? 's are' : ' is'} over ${BULLET_WORD_LIMIT} words - long bullets are what push a resume onto page 2.
+          <button type="button" class="ps-btn-ghost ai-rerun-btn" data-ai-rerun="${kind}:${wrap.dataset.idx}">Try again</button>
+        </div>` : ''}
       </div>` : ''}
     ${tech.length ? `
       <div class="ai-draft-block">
@@ -1918,6 +2241,7 @@ function collectSectionData(name) {
         degree:      row.querySelector('[data-subfield="degree"]').value.trim(),
         institution: row.querySelector('[data-subfield="institution"]').value.trim(),
         year:        row.querySelector('[data-subfield="year"]').value.trim(),
+        cgpa:        row.querySelector('[data-subfield="cgpa"]')?.value.trim() || '',
       })).filter(ed => ed.degree || ed.institution);
     case 'certifications':
       return [...body.querySelectorAll('#cert-editor .ps-list-edit-row')].map(row => ({
@@ -2823,7 +3147,7 @@ function switchDetailTab(name) {
       renderResumeSuggestions(job);
       renderResumePreview(job);
     }
-    scaleResumePage();
+    scaleAllResumePanes();
   }
   updatePaneHeight();
 }
@@ -3962,14 +4286,16 @@ function renderResumePreview(job) {
     <div class="rp-toolbar">
       <div class="rp-toolbar-copy">
         <span class="rp-toolbar-label">Preview</span>
+        <span id="rp-fit-badge" class="rp-fit-badge"></span>
       </div>
       <button id="btn-export-pdf" class="ps-save-btn rp-export-btn">
         <sl-icon library="lucide" name="download" style="vertical-align:-2px"></sl-icon>
         Export PDF
       </button>
     </div>
-    <div class="rp-viewport"><div id="rp-scale-wrap"><div class="rp-page" id="rp-page">${renderResumeHTML(draft, p)}</div></div></div>`;
-  scaleResumePage();
+    <div class="rp-viewport"><div class="rp-scale-wrap"><div class="rp-page">${renderResumeHTML(draft, p)}</div></div></div>`;
+  renderPageFitBadge(el);
+  scaleResumePage(el);
 }
 
 // Builds a self-contained print HTML from the resume inner content.
@@ -3977,8 +4303,8 @@ function renderResumePreview(job) {
 // Builds a self-contained HTML document for PDF generation via Playwright.
 // Full modern CSS (flex, custom properties) works - Chromium renders it.
 // The inner content mirrors the screen preview exactly.
-function buildExportHTML(draft, p) {
-  const inner = renderResumeHTML(draft, p);
+function buildExportHTML(draft, p, limits = {}) {
+  const inner = renderResumeHTML(draft, p, limits);
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <style>
@@ -4058,10 +4384,53 @@ async function exportResumePDF() {
   }
 }
 
-function scaleResumePage() {
-  const viewport = document.querySelector('.rp-viewport');
-  const wrap     = document.getElementById('rp-scale-wrap');
-  const page     = document.getElementById('rp-page');
+// ── One-page contract ────────────────────────────────────────────────────────
+// The preview scales to fit its pane, which visually hides overflow — a resume
+// that spills onto page 2 looked identical to one that fit. PDF export is
+// Letter with zero margins, so one page is 8.5x11in = 816x1056 CSS px at 96dpi.
+// We measure the real rendered height and report it, because "fits one page" is
+// a promise this app makes and nothing was checking it.
+const PAGE_H_PX = 1056;
+
+// Two panes render a resume preview (the job Resume tab and the profile Export
+// flow), so these helpers are scoped to a root element rather than using IDs —
+// duplicate IDs would make getElementById silently target the wrong pane.
+function measurePageFit(root = document) {
+  const page = root.querySelector('.rp-page');
+  if (!page) return null;
+  // Read the untransformed height; scaleResumePage may have a transform applied.
+  const prevTransform = page.style.transform;
+  page.style.transform = '';
+  const h = page.offsetHeight;
+  page.style.transform = prevTransform;
+  return { height: h, limit: PAGE_H_PX, pct: Math.round((h / PAGE_H_PX) * 100), fits: h <= PAGE_H_PX };
+}
+
+function renderPageFitBadge(root = document) {
+  const el = root.querySelector('.rp-fit-badge');
+  const fit = measurePageFit(root);
+  if (!el || !fit) return;
+  const over = fit.height - fit.limit;
+  el.className = `rp-fit-badge ${fit.fits ? 'is-fit' : 'is-over'}`;
+  el.textContent = fit.fits
+    ? `Fits one page · ${fit.pct}% full`
+    : `Over by ${Math.round((over / fit.limit) * 100)}% — will spill to page 2`;
+  el.title = `Rendered ${fit.height}px of ${fit.limit}px available on one Letter page`;
+}
+
+// Rescale every resume pane that is currently on screen (job Resume tab and/or
+// the profile Export flow).
+function scaleAllResumePanes() {
+  ['#resume-preview-content', '#export-preview-pane'].forEach(sel => {
+    const root = document.querySelector(sel);
+    if (root && root.offsetParent !== null) { scaleResumePage(root); renderPageFitBadge(root); }
+  });
+}
+
+function scaleResumePage(root = document) {
+  const viewport = root.querySelector('.rp-viewport');
+  const wrap     = root.querySelector('.rp-scale-wrap');
+  const page     = root.querySelector('.rp-page');
   if (!viewport || !wrap || !page) return;
   page.style.transform = '';
   wrap.style.height    = '';
@@ -4072,14 +4441,30 @@ function scaleResumePage() {
   const availH = Math.max(240, viewport.clientHeight - 12);
   const scale  = Math.min(1, availW / pageW, availH / pageH);
   if (scale < 1) {
+    // Origin must be top LEFT: the wrapper is sized to the *scaled* box, and
+    // scaling from the centre would shift the page's left edge right by
+    // (pageW - pageW*scale)/2, pushing it out of the wrapper and clipping it.
     page.style.transform       = `scale(${scale})`;
-    page.style.transformOrigin = 'top center';
+    page.style.transformOrigin = 'top left';
     wrap.style.height          = Math.ceil(pageH * scale) + 'px';
     wrap.style.width           = Math.ceil(pageW * scale) + 'px';
   }
 }
 
-function renderResumeHTML(draft, p) {
+// Per-section limits. Experience earns more bullets than projects because a
+// recruiter reads employment first; projects are there to prove range, so they
+// stay tight. Callers override these (the export flow tunes them live against
+// the one-page budget).
+const RESUME_LIMITS = {
+  expEntries: 3, expBullets: 4,
+  projEntries: 3, projBullets: 2,
+  eduEntries: 0,        // 0 = no limit
+  pubEntries: 0,
+};
+
+function renderResumeHTML(draft, p, limits = {}) {
+  const L       = { ...RESUME_LIMITS, ...limits };
+  const cap     = (arr, n) => (n && n > 0 ? (arr || []).slice(0, n) : (arr || []));
   const id      = p.identity || {};
   const contact = p.contact  || {};
 
@@ -4097,9 +4482,10 @@ function renderResumeHTML(draft, p) {
     ? `<div class="rp-section"><div class="rp-section-title">${escHtml(title)}</div>${body}</div>`
     : '';
 
-  // Bullet list helper - hard cap at 3
+  // Bullet list helper. Callers pass an already-capped array so each section
+  // can spend a different share of the page.
   const bul = (arr) => arr?.length
-    ? `<ul class="rp-bullets">${arr.slice(0, 3).map(b => `<li>${escHtml(b)}</li>`).join('')}</ul>`
+    ? `<ul class="rp-bullets">${arr.map(b => `<li>${escHtml(b)}</li>`).join('')}</ul>`
     : '';
 
   // ── Skills: group by profile bucket ──────────────────────────────────────
@@ -4118,12 +4504,12 @@ function renderResumeHTML(draft, p) {
     : '';
 
   // ── Experience: facts always from profile, bullets from draft ────────────
-  const expBody = (draft.experience || []).slice(0, 3).map(exp => {
+  const expBody = cap(draft.experience, L.expEntries).map(exp => {
     const pe      = (p.experience || []).find(e => e.id === exp.id) || {};
     const company = pe.company || '';
     const title   = pe.title   || '';
     const dates   = [pe.start, pe.end].filter(Boolean).join(' – ');
-    const bullets = (exp.bullets?.length ? exp.bullets : pe.highlights || []).slice(0, 3);
+    const bullets = cap(exp.bullets?.length ? exp.bullets : pe.highlights, L.expBullets);
     return `<div class="rp-entry">
       <div class="rp-entry-head">
         <span class="rp-exp-label"><strong>${escHtml(company)}</strong> - ${escHtml(title)}</span>
@@ -4134,12 +4520,12 @@ function renderResumeHTML(draft, p) {
   }).join('');
 
   // ── Projects: <ol>, facts from profile, bullets from draft ────────────────
-  const projItems = (draft.projects || []).slice(0, 3).map(pr => {
+  const projItems = cap(draft.projects, L.projEntries).map(pr => {
     const pp      = (p.projects || []).find(proj => proj.id === pr.id) || {};
     const name    = pp.name  || '';
     const url     = pp.url   || '';
     const tech    = (pp.tech || []).join(', ');
-    const bullets = (pr.bullets?.length ? pr.bullets : pp.highlights || []).slice(0, 3);
+    const bullets = cap(pr.bullets?.length ? pr.bullets : pp.highlights, L.projBullets);
     const nameEl  = url
       ? `<a class="rp-proj-name" href="${escAttr(url)}" target="_blank">${escHtml(name)}</a>`
       : `<span class="rp-proj-name-plain">${escHtml(name)}</span>`;
@@ -4148,17 +4534,21 @@ function renderResumeHTML(draft, p) {
   const projBody = projItems ? `<ol class="rp-proj-list">${projItems}</ol>` : '';
 
   // ── Education: entirely from profile ─────────────────────────────────────
-  const eduBody = (p.education || []).map(ed => `
+  const eduBody = cap(p.education, L.eduEntries).map(ed => {
+    const degreeLine = [ed.degree, ed.cgpa ? `CGPA: ${ed.cgpa}` : '']
+      .filter(Boolean).map(escHtml).join(' · ');
+    return `
     <div class="rp-entry">
       <div class="rp-entry-head">
         <span class="rp-exp-label">${escHtml(ed.institution || '')}</span>
         <span class="rp-entry-dates">${escHtml(ed.year || '')}</span>
       </div>
-      <div class="rp-edu-degree">${escHtml(ed.degree || '')}</div>
-    </div>`).join('');
+      <div class="rp-edu-degree">${degreeLine}</div>
+    </div>`;
+  }).join('');
 
   // ── Publications: <ol>, entirely from profile ─────────────────────────────
-  const pubItems = (p.publications || []).map(pub => {
+  const pubItems = cap(p.publications, L.pubEntries).map(pub => {
     const titleEl = pub.title
       ? (pub.url
           ? `<a class="rp-pub-title" href="${escAttr(pub.url)}" target="_blank">${escHtml(pub.title)}</a>`
@@ -4667,6 +5057,69 @@ function wire() {
   // Profile tab - ingest
   document.getElementById('btn-add-info').addEventListener('click', () => showProfileSubview('ingest'));
   document.getElementById('btn-back-from-ingest').addEventListener('click', () => showProfileSubview('main'));
+  document.getElementById('btn-export-profile')?.addEventListener('click', showProfileExport);
+  document.getElementById('btn-back-from-export')?.addEventListener('click', () => showProfileSubview('main'));
+  document.getElementById('btn-export-profile-pdf')?.addEventListener('click', exportProfileResumePDF);
+
+  // ── Export picker interactions ────────────────────────────────────────────
+  const pick = document.getElementById('export-pick-pane');
+  pick?.addEventListener('change', e => {
+    const sec = e.target.closest('[data-export-section]');
+    if (sec) {
+      exportState.include[sec.dataset.exportSection] = sec.checked;
+      renderExportPicker(); renderExportPreview();
+      return;
+    }
+    const entry = e.target.closest('[data-export-entry]');
+    if (entry) {
+      exportState.entries[entry.dataset.exportEntry] = entry.checked;
+      renderExportPicker(); renderExportPreview();
+      return;
+    }
+    const bullet = e.target.closest('[data-export-bullet]');
+    if (bullet) {
+      const [kind, id, idxStr] = bullet.dataset.exportBullet.split(':');
+      const k = entryKey(kind, id);
+      const set = exportState.bullets[k] = exportState.bullets[k] || new Set();
+      if (bullet.checked) set.add(Number(idxStr)); else set.delete(Number(idxStr));
+      // Patch in place rather than re-rendering the picker: a full rebuild on
+      // every tick would lose scroll position and detach the checkbox the user
+      // is still interacting with.
+      bullet.closest('.export-bullet')?.classList.toggle('is-on', bullet.checked);
+      const countEl = bullet.closest('.export-entry')?.querySelector('.export-entry-count');
+      if (countEl) countEl.textContent = `${set.size}/${countEl.textContent.split('/')[1]}`;
+      renderExportPreview();
+    }
+  });
+  pick?.addEventListener('click', e => {
+    const guide = e.target.closest('[data-export-guide]');
+    if (guide) {
+      const key = guide.dataset.exportGuide;
+      exportState.guiding = exportState.guiding === key ? null : key;
+      renderExportPicker();
+      document.querySelector('.export-guide-input')?.focus();
+      return;
+    }
+    const run = e.target.closest('[data-export-guide-run]');
+    if (run) { runGuidedRewrite(run.dataset.exportGuideRun); return; }
+    if (e.target.closest('[data-export-guide-cancel]')) {
+      exportState.guiding = null; renderExportPicker(); return;
+    }
+    const reset = e.target.closest('[data-export-guide-reset]');
+    if (reset) {
+      delete exportState.rewritten[reset.dataset.exportGuideReset];
+      exportState.guiding = null;
+      renderExportPicker(); renderExportPreview();
+      showToast('Original bullet restored.');
+    }
+  });
+  pick?.addEventListener('keydown', e => {
+    if (e.target.closest('.export-guide-input') && e.key === 'Enter') {
+      e.preventDefault();
+      const box = e.target.closest('.export-guide-box');
+      box?.querySelector('[data-export-guide-run]')?.click();
+    }
+  });
   document.getElementById('paste-text').addEventListener('input', updateGenerateEnabled);
   document.getElementById('btn-generate').addEventListener('click', extractAndMerge);
   document.getElementById('doc-list').addEventListener('click', async e => {
@@ -4689,6 +5142,12 @@ function wire() {
     if (aiApply) {
       const [kind, idx] = aiApply.dataset.aiApply.split(':');
       applyAIDraft(kind, idx);
+      return;
+    }
+    const aiRerun = e.target.closest('[data-ai-rerun]');
+    if (aiRerun) {
+      const [kind, idx] = aiRerun.dataset.aiRerun.split(':');
+      writeWithAI(kind, idx);
       return;
     }
     if (e.target.closest('.ai-draft-discard')) {
@@ -4735,7 +5194,7 @@ function wire() {
       if (editor?.classList.contains('highlights-editor')) addHighlightRow(editor);
       return;
     }
-    if (e.target.closest('.ps-add-edu'))  { addSimpleEditRow('edu-editor',  [{key:'degree',placeholder:'Degree'},{key:'institution',placeholder:'Institution'},{key:'year',placeholder:'Year'}]); return; }
+    if (e.target.closest('.ps-add-edu'))  { addSimpleEditRow('edu-editor',  [{key:'degree',placeholder:'Degree'},{key:'institution',placeholder:'Institution'},{key:'year',placeholder:'Year'},{key:'cgpa',placeholder:'CGPA / GPA (optional)'}]); return; }
     if (e.target.closest('.ps-add-cert')) { addSimpleEditRow('cert-editor', [{key:'name',placeholder:'Certification name'},{key:'issuer',placeholder:'Issuer'},{key:'year',placeholder:'Year'}]); return; }
     if (e.target.closest('.ps-add-pub'))  { addSimpleEditRow('pub-editor',  [{key:'title',placeholder:'Title'},{key:'venue',placeholder:'Venue'},{key:'year',placeholder:'Year'},{key:'url',placeholder:'URL'}]); return; }
   });
@@ -4970,7 +5429,7 @@ function wire() {
     }
   });
 
-  window.addEventListener('resize', () => { scaleResumePage(); updatePaneHeight(); });
+  window.addEventListener('resize', () => { scaleAllResumePanes(); updatePaneHeight(); });
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────────
