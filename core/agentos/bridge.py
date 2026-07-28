@@ -113,10 +113,41 @@ class Bridge:
 
     # ── Dialogs ──────────────────────────────────────────────────────────────
     def open_folder_dialog(self) -> str:
-        result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
-        if result:
-            return result[0] if isinstance(result, (list, tuple)) else result
-        return ""
+        """Ask the user for a folder and return its path ("" if cancelled).
+
+        Runs the picker in a short-lived subprocess rather than through
+        ``window.create_file_dialog``. pywebview marshals almost every GUI call
+        onto the toolkit thread via Invoke(), but *not* create_file_dialog — so
+        when a bridge call arrives on one of the UI server's worker threads (as
+        all of them do), the Windows folder dialog is constructed off the GUI
+        thread and silently never appears. A separate process owns its own main
+        thread, which sidesteps that entirely and behaves the same on macOS.
+        """
+        import subprocess
+        import sys
+
+        script = (
+            "import tkinter as tk\n"
+            "from tkinter import filedialog\n"
+            "root = tk.Tk()\n"
+            "root.withdraw()\n"
+            "root.attributes('-topmost', True)\n"
+            "path = filedialog.askdirectory(title='Choose a folder')\n"
+            "root.destroy()\n"
+            "print(path or '')\n"
+        )
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                capture_output=True, text=True, timeout=300,
+            )
+        except subprocess.TimeoutExpired:
+            return ""
+        except Exception:
+            return ""
+        if result.returncode != 0:
+            return ""
+        return (result.stdout or "").strip()
 
     def open_file_dialog(self) -> list[str]:
         result = webview.windows[0].create_file_dialog(
