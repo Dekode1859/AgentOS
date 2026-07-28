@@ -1067,6 +1067,9 @@ async function gatherResumeText() {
 function showProfileSubview(name) {
   ['main', 'ingest', 'export'].forEach(n =>
     document.getElementById(`profile-${n}`)?.classList.toggle('hidden', n !== name));
+  // The export flow needs the full window width; the other subviews keep the
+  // narrower reading width.
+  document.getElementById('view-profile')?.classList.toggle('view-wide', name === 'export');
   syncChrome('profile', { section: name });
 }
 
@@ -1226,6 +1229,9 @@ const exportState = {
   // when the flow opens and again once a PDF is written.
   rewriteLog: {},     // { [`exp:${id}:${i}`]: { original, versions: [], count } }
   guiding: null,      // key of the bullet currently showing a guidance box
+  order: [],          // section order for this export ([] = default)
+  summaryText: null,  // rewritten summary for this export (null = profile's own)
+  jobId: null,        // set when tailoring for a specific job, else null
 };
 
 const EXPORT_SECTIONS = [
@@ -1254,6 +1260,8 @@ function initExportState() {
   exportState.rewritten = {};
   exportState.rewriteLog = {};
   exportState.guiding = null;
+  exportState.order = [...RESUME_SECTION_ORDER];
+  exportState.summaryText = null;
 
   for (const s of EXPORT_SECTIONS) {
     // Default on for anything that actually has content.
@@ -1310,7 +1318,9 @@ function buildExportDraft() {
     });
 
   return {
-    summary: inc.summary ? (p.identity || {}).summary || '' : '',
+    summary: inc.summary
+      ? (exportState.summaryText != null ? exportState.summaryText : ((p.identity || {}).summary || ''))
+      : '',
     skills: inc.skills ? (p.skill_buckets || []).flatMap(b => b.skills || []) : [],
     experience: inc.experience ? experience : [],
     projects: inc.projects ? projects : [],
@@ -1330,12 +1340,18 @@ function exportProfileView() {
   };
 }
 
+// Selection is authoritative in this flow, so per-section caps are off; only the
+// section order is passed through.
+function exportLimits() {
+  return { expEntries: 0, expBullets: 0, projEntries: 0, projBullets: 0,
+           order: exportState.order };
+}
+
 function renderExportPreview() {
   const pane = document.getElementById('export-preview-pane');
   const page = pane?.querySelector('.rp-page');
   if (!page) return;
-  page.innerHTML = renderResumeHTML(buildExportDraft(), exportProfileView(),
-    { expEntries: 0, expBullets: 0, projEntries: 0, projBullets: 0 });
+  page.innerHTML = renderResumeHTML(buildExportDraft(), exportProfileView(), exportLimits());
   renderPageFitBadge(pane);
   scaleResumePage(pane);
   renderExportBudget();
@@ -1356,15 +1372,56 @@ function renderExportBudget() {
     : `<strong>Over one page</strong> by ${Math.round(((fit.height - fit.limit) / fit.limit) * 100)}% · remove a bullet or an entry`;
 }
 
-function showProfileExport() {
+// Same flow for both entry points. With a jobId it is "tailor for this role":
+// rewrites get the job description as steering context and the filename carries
+// the company. Without one it is the generic profile resume.
+function showProfileExport(jobId = null) {
   if (!state.profile || !hasProfileData(state.profile)) {
     showToast('Add some profile info first.');
     return;
   }
   initExportState();
+  exportState.jobId = jobId || null;
+  renderExportHeader();
+  // The flow lives inside the profile view, so when it's opened from a job the
+  // view has to switch too - otherwise it renders inside a hidden container and
+  // the click looks like it did nothing. switchView forces subview 'main', so
+  // the export subview is selected after it.
+  switchView('profile');
   showProfileSubview('export');
   renderExportPicker();
   renderExportPreview();
+}
+
+function renderExportHeader() {
+  const el = document.getElementById('export-header-copy');
+  const back = document.getElementById('btn-back-from-export');
+  if (!el) return;
+  const job = exportState.jobId ? jobById(exportState.jobId) : null;
+  if (job) {
+    el.innerHTML = `<h1>Tailor Resume</h1>
+      <p class="view-sub">For ${escHtml([job.title, job.company].filter(Boolean).join(' at ') || 'this role')} - rewrites will lean toward what this job asks for.</p>`;
+    if (back) back.innerHTML = '<sl-icon library="lucide" name="arrow-left"></sl-icon> Job';
+  } else {
+    el.innerHTML = `<h1>Export Resume</h1>
+      <p class="view-sub">Pick what goes on the page. Not tied to any job.</p>`;
+    if (back) back.innerHTML = '<sl-icon library="lucide" name="arrow-left"></sl-icon> Profile';
+  }
+}
+
+// Back out to wherever the flow was opened from.
+function leaveExportFlow() {
+  const jobId = exportState.jobId;
+  exportState.jobId = null;
+  // Drop the full-width opt-in regardless of where we're heading, or the
+  // profile page renders wide the next time it's opened.
+  document.getElementById('view-profile')?.classList.remove('view-wide');
+  if (jobId) {
+    switchView('jobs');
+    setTimeout(() => { showJobDetail(jobId); showJobsSubview('detail'); switchDetailTab('resume'); }, 60);
+  } else {
+    showProfileSubview('main');
+  }
 }
 
 function renderExportPicker() {
@@ -1372,13 +1429,53 @@ function renderExportPicker() {
   if (!el) return;
   const p = state.profile || {};
 
-  const sectionToggles = EXPORT_SECTIONS.map(s => {
-    const on = !!exportState.include[s.key];
-    return `<label class="export-toggle ${on ? 'is-on' : ''}">
-      <input type="checkbox" data-export-section="${escAttr(s.key)}"${on ? ' checked' : ''}>
-      <span>${escHtml(s.label)}</span>
-    </label>`;
+  // Sections listed in their print order, each row toggleable and movable, so
+  // the order on screen is the order on the page.
+  const labelOf = k => (EXPORT_SECTIONS.find(s => s.key === k) || {}).label || k;
+  const order = exportState.order.length ? exportState.order : RESUME_SECTION_ORDER;
+  const sectionToggles = order.map((key, i) => {
+    const on = !!exportState.include[key];
+    return `<div class="export-section-row ${on ? 'is-on' : ''}">
+      <label class="export-section-main">
+        <input type="checkbox" data-export-section="${escAttr(key)}"${on ? ' checked' : ''}>
+        <span class="export-section-label">${escHtml(labelOf(key))}</span>
+      </label>
+      <div class="export-section-move">
+        <button type="button" class="export-move-btn" data-export-move="up:${escAttr(key)}"
+          ${i === 0 ? 'disabled' : ''} title="Move up">↑</button>
+        <button type="button" class="export-move-btn" data-export-move="down:${escAttr(key)}"
+          ${i === order.length - 1 ? 'disabled' : ''} title="Move down">↓</button>
+      </div>
+    </div>`;
   }).join('');
+
+  // The summary is prose rather than bullets, so it gets its own rewrite control.
+  const profileSummary = exportState.summaryText != null
+    ? exportState.summaryText
+    : ((p.identity || {}).summary || '');
+  const summaryRewritten = exportState.summaryText != null;
+  const summaryBlock = exportState.include.summary && profileSummary ? `
+    <section class="export-block">
+      <div class="export-block-title">Profile summary</div>
+      <div class="export-summary">
+        <div class="export-summary-text">${escHtml(profileSummary)}<span class="export-bullet-words">${bulletWords(profileSummary)}w</span>${summaryRewritten ? '<span class="export-rewritten">rewritten</span>' : ''}</div>
+        ${(() => { const u = summaryRewritten ? unsupportedClaims(profileSummary) : [];
+          return u.length ? `<div class="export-claim-warn">Not found anywhere in your profile: <strong>${u.map(escHtml).join(', ')}</strong>. Reject this unless you can back it up.</div>` : ''; })()}
+        <div class="export-summary-actions">
+          <button type="button" class="ps-btn-ghost export-dest-btn" data-export-guide="summary::0">Rewrite</button>
+          ${summaryRewritten ? `<button type="button" class="ps-btn-ghost export-dest-btn" data-export-summary-reset="1">Restore original</button>` : ''}
+        </div>
+        ${exportState.guiding === 'summary::0' ? `
+          <div class="export-guide-box">
+            <input class="field-input export-guide-input" placeholder="What should the summary lead with?" />
+            <div class="export-guide-actions">
+              <button type="button" class="ai-apply-btn" data-export-guide-run="summary::0">Rewrite</button>
+              <button type="button" class="ps-btn-ghost" data-export-guide-cancel="1">Cancel</button>
+            </div>
+            <div class="export-guide-status gen-status hidden"></div>
+          </div>` : ''}
+      </div>
+    </section>` : '';
 
   const entryBlock = (kind, items, nameOf) => items.map(item => {
     const k = entryKey(kind, item.id);
@@ -1400,6 +1497,8 @@ function renderExportPicker() {
         </label>
         <button type="button" class="export-guide-btn ps-btn-ghost" data-export-guide="${escAttr(gKey)}" title="Rewrite this bullet with a nudge - stays grounded in your saved notes">Rewrite</button>
       </div>
+      ${isRewritten && unsupportedClaims(text).length ? `
+        <div class="export-claim-warn">Not found anywhere in your profile: <strong>${unsupportedClaims(text).map(escHtml).join(', ')}</strong>. Reject this unless you can back it up.</div>` : ''}
       ${exportState.guiding === gKey ? `
         <div class="export-guide-box">
           <input class="field-input export-guide-input" placeholder="What should it emphasise? e.g. lead with the scale, or name the outcome" />
@@ -1428,9 +1527,11 @@ function renderExportPicker() {
     <div id="export-dest" class="export-dest"></div>
 
     <section class="export-block">
-      <div class="export-block-title">Sections</div>
-      <div class="export-toggles">${sectionToggles}</div>
+      <div class="export-block-title">Sections &amp; order</div>
+      <div class="export-sections">${sectionToggles}</div>
     </section>
+
+    ${summaryBlock}
 
     ${exportState.include.experience ? `
       <section class="export-block">
@@ -1448,18 +1549,113 @@ function renderExportPicker() {
   renderExportDestination();
 }
 
+// ── Unsupported-claim guard ──────────────────────────────────────────────────
+// When a rewrite is given the job description as steering context, the model can
+// lift a technology out of the JD and state it as the candidate's own - observed
+// in practice: a summary tailored to a role that listed CrewAI came back claiming
+// CrewAI, which appeared nowhere in the profile. Telling the prompt not to do
+// that is not sufficient, so every rewrite is checked against the profile and
+// anything unsupported is surfaced for the user to reject.
+const CLAIM_STOPWORDS = new Set([
+  'a','an','and','the','with','for','from','into','across','using','built','build',
+  'designed','design','ships','shipped','led','cut','reduced','engineered','created',
+  'implemented','developed','automated','migrated','rewrote','validated','handled',
+  'ensured','experienced','focused','applied','strong','end','hands','production',
+  'grade','through','over','under','while','their','this','that','these','those',
+  'was','were','has','have','had','been','also','then','than','when','where','which',
+  'who','why','how','all','any','both','each','more','most','other','some','such',
+  'only','own','same','very','can','will','just','she','he','they','it','its','of',
+  'in','on','at','to','by','as','is','are','be','or','but','if','so','no','not',
+  'ambiguous','requirements','deployment','operational','ownership','systems',
+  'system','platforms','platform','workflows','workflow','architectures',
+  'architecture','engineer','experience','databases','database','vector','prompt',
+  'engineering','deliver','delivered','scale','scalable','real','time','data',
+]);
+
+function unsupportedClaims(text) {
+  const p = state.profile || {};
+  const haystack = JSON.stringify(p).toLowerCase();
+  const tokens = String(text || '').match(/[A-Za-z][A-Za-z0-9.+#/-]{1,}/g) || [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of tokens) {
+    const t = raw.replace(/[.,;:]$/, '');
+    if (t.length < 3) continue;
+    const lower = t.toLowerCase();
+    if (CLAIM_STOPWORDS.has(lower) || seen.has(lower)) continue;
+    // Only judge things that look like a named technology or product: an
+    // internal capital (LangChain, PyTorch, PGVector) or all-caps (RAG, AWS).
+    const looksNamed = /[A-Z]/.test(t.slice(1)) || (t === t.toUpperCase() && t.length >= 2);
+    if (!looksNamed) continue;
+    seen.add(lower);
+    if (!haystack.includes(lower)) out.push(t);
+  }
+  return out;
+}
+
+// Job context for rewrites, when this export is tailored to a specific role.
+// Deliberately just the title/company and the JD text — the rewrite still may
+// only state facts from the candidate's own notes; the role only steers emphasis.
+function exportJobContext() {
+  if (!exportState.jobId) return '';
+  const job = jobById(exportState.jobId);
+  if (!job) return '';
+  return `THIS RESUME IS BEING TAILORED FOR THIS ROLE:\n` +
+    `${[job.title, job.company].filter(Boolean).join(' at ')}\n` +
+    `${truncateText(job.description || '', 1800)}\n\n` +
+    `Favour the emphasis this role would care about, but do NOT claim anything ` +
+    `the candidate's notes do not support just because the role asks for it.\n\n`;
+}
+
 async function runGuidedRewrite(gKey) {
   const [kind, id, idxStr] = gKey.split(':');
   const idx = Number(idxStr);
   const p = state.profile || {};
-  const list = kind === 'exp' ? (p.experience || []) : (p.projects || []);
-  const item = list.find(x => String(x.id) === String(id));
-  if (!item) return;
 
   const box = document.querySelector(`[data-export-guide-run="${gKey}"]`)?.closest('.export-guide-box');
   const guidance = box?.querySelector('.export-guide-input')?.value.trim() || '';
   const status = box?.querySelector('.export-guide-status');
   const runBtn = box?.querySelector(`[data-export-guide-run]`);
+
+  // The summary is prose, not a bullet, so it takes a separate path.
+  if (kind === 'summary') {
+    if (runBtn) runBtn.disabled = true;
+    if (status) { status.textContent = 'Rewriting…'; status.classList.remove('hidden'); }
+    const current = exportState.summaryText != null
+      ? exportState.summaryText
+      : ((p.identity || {}).summary || '');
+    const prompt =
+      exportJobContext() +
+      `THE ONLY FACTS YOU MAY USE - the candidate's profile:\n` +
+      `Headline: ${(p.identity || {}).headline || ''}\n` +
+      `Skills: ${(p.skill_buckets || []).flatMap(b => b.skills || []).join(', ')}\n` +
+      `Roles: ${(p.experience || []).map(e => `${e.title || ''} at ${e.company || ''}`).join('; ')}\n` +
+      `Projects: ${(p.projects || []).map(pr => pr.name).filter(Boolean).join('; ')}\n\n` +
+      `CURRENT SUMMARY:\n${current}\n\n` +
+      (guidance ? `WHAT THE CANDIDATE WANTS IT TO LEAD WITH:\n${guidance}\n\n` : '') +
+      `Rewrite the professional summary as 2 to 3 sentences of prose, max 60 words ` +
+      `total. Return it as the single item in "highlights" - it is prose, so the ` +
+      `bullet rules about action verbs do NOT apply here. Leave "description", ` +
+      `"tech" and "tags" empty. Invent nothing.`;
+    try {
+      const result = await runAgentToFile('profile-writer', prompt);
+      const fresh = (result.highlights || []).filter(Boolean)[0];
+      if (!fresh) throw new Error('nothing returned');
+      exportState.summaryText = fresh;
+      exportState.guiding = null;
+      renderExportPicker(); renderExportPreview();
+      showToast('Summary rewritten.');
+    } catch (e) {
+      if (status) status.textContent = `Rewrite failed: ${e.message}`;
+      if (runBtn) runBtn.disabled = false;
+    }
+    return;
+  }
+
+  const list = kind === 'exp' ? (p.experience || []) : (p.projects || []);
+  const item = list.find(x => String(x.id) === String(id));
+  if (!item) return;
+
   if (runBtn) runBtn.disabled = true;
   if (status) { status.textContent = 'Rewriting…'; status.classList.remove('hidden'); }
 
@@ -1492,6 +1688,7 @@ async function runGuidedRewrite(gKey) {
     : '';
 
   const prompt =
+    exportJobContext() +
     `${context}\n\n` +
     `THE ONLY FACTS YOU MAY USE - the candidate's own saved notes for this entry:\n` +
     `${item.raw_description || '(none provided)'}\n\n` +
@@ -1588,9 +1785,12 @@ async function exportProfileResumePDF() {
   if (btn) { btn.disabled = true; btn.innerHTML = '<sl-spinner style="font-size:13px;--track-width:2px"></sl-spinner> Exporting…'; }
   try {
     const name = ((state.profile || {}).identity || {}).name || 'resume';
-    const filename = `${name.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')}_Resume.pdf`;
-    const html = buildExportHTML(buildExportDraft(), exportProfileView(),
-      { expEntries: 0, expBullets: 0, projEntries: 0, projBullets: 0 });
+    const slug = t => (t || '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+    const job = exportState.jobId ? jobById(exportState.jobId) : null;
+    const filename = job
+      ? `${slug(name)}_${slug(job.company) || 'Role'}_Resume.pdf`
+      : `${slug(name)}_Resume.pdf`;
+    const html = buildExportHTML(buildExportDraft(), exportProfileView(), exportLimits());
     const res = await bridge.exportResumePdf(html, filename, savedExportDir());
     if (res?.ok) {
       showToast(`Saved: ${res.path || res.filename}`);
@@ -4046,8 +4246,11 @@ function renderResumeSuggestions(job) {
         </div>
       </div>
       <div class="ra-actions-stack">
-        <button id="btn-compose-resume" class="ps-save-btn ra-generate-btn" title="${hasDraft ? 'Rebuild the full draft from your profile and this job (uses AI)' : 'Build a role-targeted draft from your profile and this job (uses AI)'}">
-          ${hasDraft ? 'Regenerate Resume' : 'Generate Resume'}
+        <button id="btn-tailor-resume" class="ps-save-btn ra-generate-btn" title="Choose the sections, entries and individual bullets for this role, and rewrite any of them with the job description as context">
+          Pick sections &amp; bullets
+        </button>
+        <button id="btn-compose-resume" class="ps-btn-ghost ra-reanalyze-btn" title="${hasDraft ? 'Let the AI rebuild the whole draft in one pass (uses AI)' : 'Let the AI write a whole draft in one pass (uses AI)'}">
+          ${hasDraft ? 'Auto-generate whole draft' : 'Auto-generate draft'}
         </button>
         ${hasDraft ? `<button id="btn-apply-resume-selection" class="ps-btn-ghost ra-reanalyze-btn" title="Update the draft's skill list with your checkbox selections - instant, no AI">Apply Skill Selections</button>` : ''}
         ${hasDraft ? `<button id="btn-refresh-resume-ai" class="ps-btn-ghost ra-reanalyze-btn" title="Rewrite the summary and bullets of the existing draft (uses AI)">Rewrite with AI</button>` : ''}
@@ -4547,6 +4750,11 @@ function scaleResumePage(root = document) {
 // recruiter reads employment first; projects are there to prove range, so they
 // stay tight. Callers override these (the export flow tunes them live against
 // the one-page budget).
+const RESUME_SECTION_ORDER = [
+  'summary', 'experience', 'projects', 'skills', 'education',
+  'publications', 'certifications',
+];
+
 const RESUME_LIMITS = {
   expEntries: 3, expBullets: 4,
   projEntries: 3, projBullets: 2,
@@ -4671,18 +4879,29 @@ function renderResumeHTML(draft, p, limits = {}) {
   // summary when the caller left it unspecified.
   const summaryText = draft.summary != null ? draft.summary : (id.summary || '');
 
+  // Sections are independent blocks with no cross-references, so their order is
+  // purely presentational and callers can rearrange it. Putting experience above
+  // projects (or dropping the summary) matters when a screener only reads the
+  // top third of the page.
+  const blocks = {
+    summary:        summaryText ? sec('Profile', `<p class="rp-prose">${escHtml(summaryText)}</p>`) : '',
+    experience:     sec('Work Experience', expBody),
+    projects:       sec('Projects', projBody),
+    skills:         sec('Skills', skillsBody),
+    education:      sec('Education', eduBody),
+    publications:   pubBody ? sec('Publications', pubBody) : '',
+    certifications: certBody ? sec('Certifications', certBody) : '',
+  };
+  const order = (L.order && L.order.length) ? L.order : RESUME_SECTION_ORDER;
+  // Anything the caller forgot to list still renders, after the ordered ones.
+  const ordered = [...order, ...Object.keys(blocks).filter(k => !order.includes(k))];
+
   return `
     <div class="rp-header">
       <div class="rp-name">${escHtml(id.name || 'Your Name')}</div>
       ${contactParts.length ? `<div class="rp-contact">${contactParts.join(' | ')}</div>` : ''}
     </div>
-    ${summaryText ? sec('Profile', `<p class="rp-prose">${escHtml(summaryText)}</p>`) : ''}
-    ${sec('Work Experience', expBody)}
-    ${sec('Projects', projBody)}
-    ${sec('Skills', skillsBody)}
-    ${sec('Education', eduBody)}
-    ${pubBody ? sec('Publications', pubBody) : ''}
-    ${certBody ? sec('Certifications', certBody) : ''}
+    ${ordered.map(k => blocks[k] || '').join('')}
   `;
 }
 
@@ -5166,8 +5385,8 @@ function wire() {
   // Profile tab - ingest
   document.getElementById('btn-add-info').addEventListener('click', () => showProfileSubview('ingest'));
   document.getElementById('btn-back-from-ingest').addEventListener('click', () => showProfileSubview('main'));
-  document.getElementById('btn-export-profile')?.addEventListener('click', showProfileExport);
-  document.getElementById('btn-back-from-export')?.addEventListener('click', () => showProfileSubview('main'));
+  document.getElementById('btn-export-profile')?.addEventListener('click', () => showProfileExport());
+  document.getElementById('btn-back-from-export')?.addEventListener('click', leaveExportFlow);
   document.getElementById('btn-export-profile-pdf')?.addEventListener('click', exportProfileResumePDF);
 
   // ── Export picker interactions ────────────────────────────────────────────
@@ -5201,6 +5420,26 @@ function wire() {
     }
   });
   pick?.addEventListener('click', e => {
+    const move = e.target.closest('[data-export-move]');
+    if (move) {
+      const [dir, key] = move.dataset.exportMove.split(':');
+      const arr = exportState.order.length ? [...exportState.order] : [...RESUME_SECTION_ORDER];
+      const i = arr.indexOf(key);
+      const j = dir === 'up' ? i - 1 : i + 1;
+      if (i >= 0 && j >= 0 && j < arr.length) {
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+        exportState.order = arr;
+        renderExportPicker(); renderExportPreview();
+      }
+      return;
+    }
+    if (e.target.closest('[data-export-summary-reset]')) {
+      exportState.summaryText = null;
+      exportState.guiding = null;
+      renderExportPicker(); renderExportPreview();
+      showToast('Original summary restored.');
+      return;
+    }
     if (e.target.closest('#btn-choose-export-dir')) { chooseExportDir(); return; }
     if (e.target.closest('#btn-clear-export-dir')) {
       setSavedExportDir(''); renderExportDestination(); showToast('Back to Downloads.'); return;
@@ -5428,6 +5667,7 @@ function wire() {
     const tabLink = e.target.closest('.detail-tab-link');
     if (tabLink?.dataset.tab) { switchDetailTab(tabLink.dataset.tab); return; }
 
+    if (e.target.closest('#btn-tailor-resume'))      { showProfileExport(state.activeJobId); return; }
     if (e.target.closest('#btn-compose-resume'))     { composeResume('compose'); return; }
     if (e.target.closest('#btn-apply-resume-selection')) { applyResumeSelectionsStatic(); return; }
     if (e.target.closest('#btn-refresh-resume-ai'))  { composeResume('refresh_ai'); return; }

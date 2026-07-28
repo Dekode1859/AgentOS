@@ -1361,6 +1361,13 @@ html, body {
 /* ── Profile resume export ────────────────────────────────────────────────── */
 .view-header-actions { display: flex; gap: 8px; align-items: center; }
 
+/* .view caps itself at a comfortable reading width, which is right for the
+   normal profile pages but wrong for the two-column export flow: the capped
+   view is also the scrolling element, so on a wide window its scrollbar ends up
+   floating in the middle of the screen instead of at the window edge. The
+   export subview opts out of the cap (as #view-jobs already does). */
+.view.view-wide { max-width: none; }
+
 /* The picker deliberately does NOT scroll internally — an inner scrollbar lands
    in the middle of the window, between the two panes. Instead the whole view
    scrolls (its scrollbar sits at the far right, where the rest of the app puts
@@ -1421,6 +1428,36 @@ html, body {
   font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em;
   color: var(--dim); font-weight: 700; margin-bottom: 8px;
 }
+
+/* Section rows: listed in print order, toggleable and movable */
+.export-sections { display: flex; flex-direction: column; gap: 5px; }
+.export-section-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
+}
+.export-section-row.is-on { border-color: rgba(79,142,247,0.30); background: rgba(79,142,247,0.06); }
+.export-section-main { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; }
+.export-section-main input { accent-color: var(--accent); }
+.export-section-label { font-size: 12.5px; color: var(--text); }
+.export-section-move { display: flex; gap: 3px; flex-shrink: 0; }
+.export-move-btn {
+  width: 22px; height: 22px; padding: 0; line-height: 1;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: transparent; color: var(--muted);
+  cursor: pointer; font-size: 12px; font-family: inherit;
+}
+.export-move-btn:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.export-move-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* Profile summary block (prose, so it gets its own rewrite control) */
+.export-summary {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; background: rgba(255,255,255,0.02);
+}
+.export-summary-text { font-size: 12.5px; line-height: 1.55; color: var(--text); }
+.export-summary-actions { display: flex; gap: 7px; margin-top: 9px; }
 
 .export-toggles { display: flex; flex-wrap: wrap; gap: 7px; }
 .export-toggle {
@@ -2394,4 +2431,15 @@ sl-button[variant="primary"]::part(base):hover {
   #jobs-detail {
     padding: 18px 18px 0;
   }
+}
+
+.export-claim-warn {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(229,115,115,0.55);
+  border-radius: 8px;
+  background: rgba(229,115,115,0.08);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #ffb4b4;
 }
