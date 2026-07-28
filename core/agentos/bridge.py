@@ -615,23 +615,38 @@ class Bridge:
             pass
 
     # ── Export ───────────────────────────────────────────────────────────────
-    def export_resume_pdf(self, html: str, filename: str) -> dict:
-        """Render resume HTML to a PDF via Playwright/Chromium and save to ~/Downloads.
-        Runs Playwright in a subprocess to avoid greenlet/pywebview thread conflicts."""
+    def export_resume_pdf(self, html: str, filename: str, out_dir: str = "") -> dict:
+        """Render HTML to a PDF via Playwright/Chromium and save it to disk.
+
+        Writes to ``out_dir`` when given (the caller having picked a folder via
+        ``open_folder_dialog``), otherwise to the platform's Downloads folder.
+        ``pathlib`` and pywebview's folder dialog are both cross-platform, so no
+        per-OS branching is needed here.
+
+        Runs Playwright in a subprocess to avoid greenlet/pywebview thread
+        conflicts."""
         import pathlib
         import subprocess
         import sys
         import tempfile
         import os
 
-        downloads = pathlib.Path.home() / "Downloads"
-        downloads.mkdir(exist_ok=True)
-        path = downloads / filename
+        if out_dir:
+            target = pathlib.Path(out_dir).expanduser()
+            if not target.is_dir():
+                return {"ok": False, "error": f"Folder not found: {target}"}
+        else:
+            target = pathlib.Path.home() / "Downloads"
+            target.mkdir(parents=True, exist_ok=True)
+
+        # Strip any path separators a caller may have put in the filename so the
+        # chosen folder is always where the file lands.
+        path = target / pathlib.Path(filename).name
 
         stem, suffix = path.stem, path.suffix
         i = 1
         while path.exists():
-            path = downloads / f"{stem}_{i}{suffix}"
+            path = target / f"{stem}_{i}{suffix}"
             i += 1
 
         # Write HTML to a temp file so the subprocess can read it cleanly
