@@ -53,10 +53,9 @@
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>
           <span class="nav-label">Jobs</span>
         </button>
-        <button class="nav-item" data-view="matches" disabled>
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-          <span class="nav-label">Insights</span>
-          <span class="soon">soon</span>
+        <button class="nav-item" data-view="scanner">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <span class="nav-label">Scanner</span>
         </button>
       </nav>
 
@@ -262,7 +261,36 @@
         </div>
       </section>
 
-      <section id="view-matches" class="view"><div class="view-placeholder">Saved matches - coming soon.</div></section>
+      <section id="view-scanner" class="view">
+        <div class="scanner-shell">
+          <div class="scanner-header">
+            <div>
+              <h2>Scanner</h2>
+              <p class="scanner-sub">Headlessly pulls jobs from your logged-in LinkedIn session. Review results here before adding them to Jobs.</p>
+            </div>
+            <div class="scanner-actions">
+              <span id="scanner-status" class="scanner-status"></span>
+              <sl-button id="btn-scanner-run" variant="primary">
+                <svg slot="prefix" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                Scan now
+              </sl-button>
+            </div>
+          </div>
+
+          <div class="scanner-settings">
+            <div class="scanner-settings-row">
+              <sl-checkbox id="scanner-include-recommended" checked>Include LinkedIn's recommended-for-you feed</sl-checkbox>
+            </div>
+            <div id="scanner-searches" class="scanner-searches"></div>
+            <sl-button id="btn-scanner-add-search" size="small">
+              <svg slot="prefix" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Add search
+            </sl-button>
+          </div>
+
+          <div id="scanner-feed" class="scanner-feed"></div>
+        </div>
+      </section>
 
     </main>
   </div>

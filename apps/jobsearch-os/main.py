@@ -16,6 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
 
 from agentos import run, AppConfig, WorkspaceFolder
 
+from app_bridge import JobSearchBridge
+
 
 APP = AppConfig(
     app_id="jobsearch-os",
@@ -29,6 +31,7 @@ APP = AppConfig(
     ),
     default_capture_folder="documents",
     default_agent="profile",
+    bridge_cls=JobSearchBridge,       # adds Scanner methods; see app_bridge.py
 )
 
 

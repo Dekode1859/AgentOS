@@ -120,6 +120,32 @@ git -c user.name="Dekode1859" -c user.email="prateekdwivedi30@gmail.com" commit 
 
 Core must remain grep-clean of domain words (learning, curriculum, job, resume, etc.). If you're adding something to Core, ask: "would this make sense in a cooking-recipe app?" If not, it belongs in the app.
 
+## Job Search OS — Scanner Roadmap
+
+The Scanner tab (`apps/jobsearch-os/scanner/`, `app_bridge.py`) headlessly pulls jobs from
+the user's logged-in LinkedIn session via the shared `workspace/browser-profile` Chromium
+profile. It's app-owned, not Core — LinkedIn selectors/URLs live entirely in
+`apps/jobsearch-os/scanner/linkedin_scan.py`, kept out of `core/agentos` per the Core
+Purity Rules below. Scanned jobs land in their own `workspace/jobs/scanner-feed.json`,
+separate from the user's tracked `jobs.json`, until explicitly promoted.
+
+Shipped in v1 (manual only): a "Scan now" button that scrapes the recommended-for-you feed
+plus any configured keyword/location searches, deduped card-level fields only (title,
+company, location, link, posted time, easy-apply).
+
+Deliberately deferred — do not build without discussing the approach first:
+- **Recurrence while the app is closed.** V1 only scans on demand while the app is open.
+  The user wants this to eventually run in the background (e.g. a system-tray mode) so
+  near-real-time notifications are possible even when the app isn't open — no mechanism
+  chosen yet.
+- **Windows notifications** for new matching jobs once recurrence exists.
+- **Full per-job detail extraction** — deterministic parsing vs. plugging in the existing
+  `job-extract` agent — deliberately not decided until the scan pipeline itself is proven
+  out.
+- **Scanner-side insights** — e.g. flagging job descriptions with incoherent requirements
+  (implausible years-of-experience claims for tools that haven't existed that long), as a
+  signal of how disorganized/undesirable a listing's originating company is. Not built yet.
+
 ## Tech Stack
 
 - **Runtime:** Python 3.11+, PyWebView 4.4+, OpenCode CLI

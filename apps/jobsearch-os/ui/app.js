@@ -18,6 +18,11 @@ const state = {
   analysisHistory: {},                   // { [jobId]: { job_id, runs: [...] } }
   analysisSnapshots: {},                 // { [jobId]: { [runId]: snapshot } }
   analysisHistoryLoading: {},            // { [jobId]: true }
+  scanner: {
+    settings: { include_recommended: true, searches: [] },
+    feed: [],           // persisted scanner-feed.json (separate from jobs.json)
+    running: false,
+  },
 };
 
 const PROFILE_PATH = 'profile/profile.json';
@@ -981,6 +986,12 @@ const bridge = (() => {
     browserSetupProfile:      ()    => call('browser_setup_profile'),
     browserCheckGoogleLogin:  ()    => call('browser_check_google_login'),
     browserResetProfile:      ()    => call('browser_reset_profile'),
+    scannerRun:           ()          => call('scanner_run'),
+    scannerGetFeed:       ()          => call('scanner_get_feed'),
+    scannerGetSettings:   ()          => call('scanner_get_settings'),
+    scannerSaveSettings:  (settings)  => call('scanner_save_settings', settings),
+    scannerPromote:       (jobId)     => call('scanner_promote', jobId),
+    scannerDismiss:       (jobId)     => call('scanner_dismiss', jobId),
   };
 })();
 
@@ -1230,6 +1241,12 @@ const exportState = {
   rewriteLog: {},     // { [`exp:${id}:${i}`]: { original, versions: [], count } }
   guiding: null,      // key of the bullet currently showing a guidance box
   order: [],          // section order for this export ([] = default)
+  entryOrder: { exp: [], proj: [] },  // display order of entry ids per kind ([] = profile order)
+  bulletOrder: {},    // { [`exp:${id}`|`proj:${id}`]: [ref,...] } — ref is a highlight
+                       // index (number) or a custom-bullet key (string, see `custom`)
+  custom: {},         // { [`exp:${id}`|`proj:${id}`]: { [customKey]: "text" } } — bullets
+                       // typed directly into this export, not backed by a profile highlight
+  customSeq: 0,       // counter for unique custom-bullet keys this session
   summaryText: null,  // rewritten summary for this export (null = profile's own)
   jobId: null,        // set when tailoring for a specific job, else null
   extraSkills: new Set(),  // JD-suggested skills to add to the resume only
@@ -1247,10 +1264,60 @@ const EXPORT_SECTIONS = [
 
 function entryKey(kind, id) { return `${kind}:${id}`; }
 
+// A bullet ref is either a highlight index (number, "5") or a custom-bullet
+// key (string, "c5") - decide which from the attribute text.
+function parseExportBulletRef(refStr) {
+  return refStr.startsWith('c') ? refStr : Number(refStr);
+}
+
 // Effective bullet text for an entry: a rewritten version if one exists,
 // otherwise the stored highlight.
 function exportBulletText(kind, id, idx, original) {
   return exportState.rewritten[`${kind}:${id}:${idx}`] ?? original;
+}
+
+// Text for a bullet "ref": a highlight index (number) resolves through the
+// rewrite path above, a custom-bullet key (string) reads straight from the
+// typed-in text — there's no "original" to fall back to.
+function bulletRefText(kind, id, ref, item) {
+  if (typeof ref === 'string') return exportState.custom[entryKey(kind, id)]?.[ref] ?? '';
+  return exportBulletText(kind, id, ref, (item.highlights || [])[ref]);
+}
+
+// Every bullet available on an entry: its profile highlights (by index) plus
+// any bullets typed directly into this export session (by custom key).
+function allBulletRefs(kind, id, item) {
+  const origLen = (item.highlights || []).length;
+  const origRefs = Array.from({ length: origLen }, (_, i) => i);
+  const customRefs = Object.keys(exportState.custom[entryKey(kind, id)] || {});
+  return [...origRefs, ...customRefs];
+}
+
+// Display order for an entry's bullets. Self-healing: drops refs that no
+// longer exist (a removed custom bullet) and appends any new ones (a freshly
+// added bullet, or the first render) at the end.
+function bulletOrderFor(k, refs) {
+  const arr = (exportState.bulletOrder[k] || []).filter(r => refs.includes(r));
+  for (const r of refs) if (!arr.includes(r)) arr.push(r);
+  exportState.bulletOrder[k] = arr;
+  return arr;
+}
+
+// Display order for a kind's entries (ids). Same self-healing behaviour as
+// bulletOrderFor, keyed on entry id instead of bullet ref.
+function entryOrderFor(kind, ids) {
+  const arr = (exportState.entryOrder[kind] || []).filter(id => ids.includes(id));
+  for (const id of ids) if (!arr.includes(id)) arr.push(id);
+  exportState.entryOrder[kind] = arr;
+  return arr;
+}
+
+// A kind's items (experience or projects) in the user's chosen display order.
+function orderedItems(kind, list) {
+  const ids = list.map(x => String(x.id));
+  const order = entryOrderFor(kind, ids);
+  const byId = new Map(list.map(x => [String(x.id), x]));
+  return order.map(id => byId.get(id)).filter(Boolean);
 }
 
 function initExportState() {
@@ -1262,6 +1329,10 @@ function initExportState() {
   exportState.rewriteLog = {};
   exportState.guiding = null;
   exportState.order = [...RESUME_SECTION_ORDER];
+  exportState.entryOrder = { exp: [], proj: [] };
+  exportState.bulletOrder = {};
+  exportState.custom = {};
+  exportState.customSeq = 0;
   exportState.summaryText = null;
   exportState.extraSkills = new Set();
 
@@ -1303,21 +1374,21 @@ function buildExportDraft() {
   const p = state.profile || {};
   const inc = exportState.include;
 
-  const experience = (p.experience || [])
-    .filter(e => exportState.entries[entryKey('exp', e.id)])
-    .map(e => {
-      const k = entryKey('exp', e.id);
-      const picked = [...(exportState.bullets[k] || new Set())].sort((a, b) => a - b);
-      return { id: e.id, bullets: picked.map(i => exportBulletText('exp', e.id, i, (e.highlights || [])[i])).filter(Boolean) };
+  // Bullets appear in the user's chosen order (default: profile order, then
+  // any added bullets at the end), not just the ones that are selected.
+  const buildList = (kind, list) => orderedItems(kind, list)
+    .filter(item => exportState.entries[entryKey(kind, item.id)])
+    .map(item => {
+      const k = entryKey(kind, item.id);
+      const refs = allBulletRefs(kind, item.id, item);
+      const order = bulletOrderFor(k, refs);
+      const selected = exportState.bullets[k] || new Set();
+      const picked = order.filter(r => selected.has(r));
+      return { id: item.id, bullets: picked.map(r => bulletRefText(kind, item.id, r, item)).filter(Boolean) };
     });
 
-  const projects = (p.projects || [])
-    .filter(pr => exportState.entries[entryKey('proj', pr.id)])
-    .map(pr => {
-      const k = entryKey('proj', pr.id);
-      const picked = [...(exportState.bullets[k] || new Set())].sort((a, b) => a - b);
-      return { id: pr.id, bullets: picked.map(i => exportBulletText('proj', pr.id, i, (pr.highlights || [])[i])).filter(Boolean) };
-    });
+  const experience = buildList('exp', p.experience || []);
+  const projects = buildList('proj', p.projects || []);
 
   return {
     summary: inc.summary
@@ -1550,29 +1621,41 @@ function renderExportPicker() {
       </div>
     </section>` : '';
 
-  const entryBlock = (kind, items, nameOf) => items.map(item => {
+  const entryBlock = (kind, items, nameOf) => items.map((item, entryIdx) => {
     const k = entryKey(kind, item.id);
     const on = !!exportState.entries[k];
     const picked = exportState.bullets[k] || new Set();
-    const hl = item.highlights || [];
-    const rows = hl.map((h, i) => {
-      const text = exportBulletText(kind, item.id, i, h);
-      const logK = `${kind}:${item.id}:${i}`;
-      const isRewritten = exportState.rewritten[logK] != null;
-      const changeCount = exportState.rewriteLog[logK]?.count || 0;
-      const sel = picked.has(i);
-      const gKey = `${kind}:${item.id}:${i}`;
+    const refs = allBulletRefs(kind, item.id, item);
+    const order = bulletOrderFor(k, refs);
+    const rows = order.map((ref, rowIdx) => {
+      const isCustom = typeof ref === 'string';
+      const text = bulletRefText(kind, item.id, ref, item);
+      const logK = `${kind}:${item.id}:${ref}`;
+      const isRewritten = !isCustom && exportState.rewritten[logK] != null;
+      const changeCount = !isCustom ? (exportState.rewriteLog[logK]?.count || 0) : 0;
+      const sel = picked.has(ref);
+      const gKey = logK;
       const tooLong = bulletWords(text) > BULLET_WORD_LIMIT;
-      return `<div class="export-bullet ${sel ? 'is-on' : ''} ${tooLong ? 'is-overlong' : ''}">
+      return `<div class="export-bullet ${sel ? 'is-on' : ''} ${tooLong ? 'is-overlong' : ''} ${isCustom ? 'is-custom' : ''}">
+        <div class="export-bullet-move">
+          <button type="button" class="export-move-btn" data-export-bullet-move="up:${escAttr(kind)}:${escAttr(String(item.id))}:${escAttr(String(ref))}"
+            ${rowIdx === 0 ? 'disabled' : ''} title="Move up">↑</button>
+          <button type="button" class="export-move-btn" data-export-bullet-move="down:${escAttr(kind)}:${escAttr(String(item.id))}:${escAttr(String(ref))}"
+            ${rowIdx === order.length - 1 ? 'disabled' : ''} title="Move down">↓</button>
+        </div>
         <label class="export-bullet-main">
           <input type="checkbox" data-export-bullet="${escAttr(gKey)}"${sel ? ' checked' : ''}>
-          <span class="export-bullet-text">${escHtml(text)}<span class="export-bullet-words${tooLong ? ' is-over' : ''}" title="${tooLong ? `Over ${BULLET_WORD_LIMIT} words - long bullets are what push the resume onto a second page` : ''}">${bulletWords(text)}w</span>${isRewritten ? `<span class="export-rewritten" title="Original: ${escAttr(exportState.rewriteLog[logK]?.original || '')}">rewritten${changeCount > 1 ? ` ${changeCount}x` : ''}</span>` : ''}</span>
+          ${isCustom
+            ? `<input class="field-input export-bullet-input" data-export-custom-bullet="${escAttr(gKey)}" value="${escAttr(text)}" placeholder="Type a new bullet…">`
+            : `<span class="export-bullet-text">${escHtml(text)}<span class="export-bullet-words${tooLong ? ' is-over' : ''}" title="${tooLong ? `Over ${BULLET_WORD_LIMIT} words - long bullets are what push the resume onto a second page` : ''}">${bulletWords(text)}w</span>${isRewritten ? `<span class="export-rewritten" title="Original: ${escAttr(exportState.rewriteLog[logK]?.original || '')}">rewritten${changeCount > 1 ? ` ${changeCount}x` : ''}</span>` : ''}</span>`}
         </label>
-        <button type="button" class="export-guide-btn ps-btn-ghost" data-export-guide="${escAttr(gKey)}" title="Rewrite this bullet with a nudge - stays grounded in your saved notes">Rewrite</button>
+        ${isCustom
+          ? `<button type="button" class="ps-btn-icon" data-export-remove-bullet="${escAttr(gKey)}" title="Remove this bullet">×</button>`
+          : `<button type="button" class="export-guide-btn ps-btn-ghost" data-export-guide="${escAttr(gKey)}" title="Rewrite this bullet with a nudge - stays grounded in your saved notes">Rewrite</button>`}
       </div>
-      ${isRewritten && unsupportedClaims(text).length ? `
+      ${!isCustom && isRewritten && unsupportedClaims(text).length ? `
         <div class="export-claim-warn">Not found anywhere in your profile: <strong>${unsupportedClaims(text).map(escHtml).join(', ')}</strong>. Reject this unless you can back it up.</div>` : ''}
-      ${exportState.guiding === gKey ? `
+      ${!isCustom && exportState.guiding === gKey ? `
         <div class="export-guide-box">
           <input class="field-input export-guide-input" placeholder="What should it emphasise? e.g. lead with the scale, or name the outcome" />
           <div class="export-guide-actions">
@@ -1585,13 +1668,22 @@ function renderExportPicker() {
     }).join('');
 
     return `<div class="export-entry ${on ? '' : 'is-off'}">
-      <label class="export-entry-head">
-        <input type="checkbox" data-export-entry="${escAttr(k)}"${on ? ' checked' : ''}>
-        <span class="export-entry-name">${escHtml(nameOf(item))}</span>
-        <span class="export-entry-count">${picked.size}/${hl.length}</span>
-      </label>
-      ${on && hl.length ? `<div class="export-bullets">${rows}</div>` : ''}
-      ${on && !hl.length ? `<div class="export-entry-empty">No bullets yet - add some in the profile first.</div>` : ''}
+      <div class="export-entry-head-row">
+        <label class="export-entry-head">
+          <input type="checkbox" data-export-entry="${escAttr(k)}"${on ? ' checked' : ''}>
+          <span class="export-entry-name">${escHtml(nameOf(item))}</span>
+          <span class="export-entry-count">${picked.size}/${refs.length}</span>
+        </label>
+        <div class="export-entry-move">
+          <button type="button" class="export-move-btn" data-export-entry-move="up:${escAttr(kind)}:${escAttr(String(item.id))}"
+            ${entryIdx === 0 ? 'disabled' : ''} title="Move up">↑</button>
+          <button type="button" class="export-move-btn" data-export-entry-move="down:${escAttr(kind)}:${escAttr(String(item.id))}"
+            ${entryIdx === items.length - 1 ? 'disabled' : ''} title="Move down">↓</button>
+        </div>
+      </div>
+      ${on && refs.length ? `<div class="export-bullets">${rows}</div>` : ''}
+      ${on && !refs.length ? `<div class="export-entry-empty">No bullets yet - add one below, or add some in the profile first.</div>` : ''}
+      ${on ? `<button type="button" class="ps-btn-ghost export-add-bullet-btn" data-export-add-bullet="${escAttr(k)}">+ Add bullet</button>` : ''}
     </div>`;
   }).join('');
 
@@ -1642,13 +1734,13 @@ function renderExportPicker() {
     ${exportState.include.experience ? `
       <section class="export-block">
         <div class="export-block-title">Experience</div>
-        ${entryBlock('exp', p.experience || [], e => [e.title, e.company].filter(Boolean).join(' · ') || 'Untitled role')}
+        ${entryBlock('exp', orderedItems('exp', p.experience || []), e => [e.title, e.company].filter(Boolean).join(' · ') || 'Untitled role')}
       </section>` : ''}
 
     ${exportState.include.projects ? `
       <section class="export-block">
         <div class="export-block-title">Projects</div>
-        ${entryBlock('proj', p.projects || [], pr => pr.name || 'Untitled project')}
+        ${entryBlock('proj', orderedItems('proj', p.projects || []), pr => pr.name || 'Untitled project')}
       </section>` : ''}
   `;
   renderExportBudget();
@@ -2041,7 +2133,7 @@ const SECTION_VIEWS = {
         ${c.email ? `<div class="ps-meta-row"><sl-icon library="lucide" name="mail"></sl-icon>${escHtml(c.email)}</div>` : ''}
         ${c.phone ? `<div class="ps-meta-row"><sl-icon library="lucide" name="phone"></sl-icon>${escHtml(c.phone)}</div>` : ''}
         ${(c.links||[]).map(l => `<div class="ps-meta-row"><sl-icon library="lucide" name="link"></sl-icon>
-          <a class="p-link" href="${escAttr(l.url)}" target="_blank">${escHtml(l.label || l.url)}</a></div>`).join('')}`;
+          <a class="p-link" href="${escAttr(normalizeUrl(l.url))}" target="_blank">${escHtml(l.label || l.url)}</a></div>`).join('')}`;
   },
   skills: (p) => {
     const bs = p.skill_buckets || [];
@@ -2074,7 +2166,7 @@ const SECTION_VIEWS = {
         <div class="ps-list-item">
           <div class="ps-proj-head">
             <span class="entry-title">${escHtml(pr.name||'')}</span>
-            ${pr.url ? `<a class="p-link" href="${escAttr(pr.url)}" target="_blank" style="font-size:13px">
+            ${pr.url ? `<a class="p-link" href="${escAttr(normalizeUrl(pr.url))}" target="_blank" style="font-size:13px">
               <sl-icon library="lucide" name="external-link"></sl-icon></a>` : ''}
           </div>
           ${pr.description ? `<div class="entry-sub">${escHtml(pr.description)}</div>` : ''}
@@ -2110,7 +2202,7 @@ const SECTION_VIEWS = {
         <div class="ps-list-item">
           <div class="entry-title">${escHtml(pub.title||'')}</div>
           <div class="entry-sub">${escHtml([pub.venue,pub.year].filter(Boolean).join(' · '))}</div>
-          ${pub.url ? `<a class="p-link" href="${escAttr(pub.url)}" target="_blank" style="font-size:12.5px">${escHtml(pub.url)}</a>` : ''}
+          ${pub.url ? `<a class="p-link" href="${escAttr(normalizeUrl(pub.url))}" target="_blank" style="font-size:12.5px">${escHtml(pub.url)}</a>` : ''}
         </div>`).join('');
   },
 };
@@ -3135,7 +3227,7 @@ function renderJobsDashboard() {
         </div>
         ${date ? `<div class="jc-date">${escHtml(date)}</div>` : ''}
         <div class="jc-actions">
-          ${job.link ? `<a class="job-link-icon" href="${escAttr(job.link)}" title="Open apply link"
+          ${job.link ? `<a class="job-link-icon" href="${escAttr(normalizeUrl(job.link))}" title="Open apply link"
             target="_blank" onclick="event.stopPropagation()">
             <sl-icon library="lucide" name="external-link"></sl-icon></a>` : ''}
           <button class="jc-delete-btn" data-id="${escAttr(job.id)}" title="Delete job">
@@ -4610,7 +4702,7 @@ function renderResumeHTML(draft, p, limits = {}) {
     contact.phone ? escHtml(contact.phone) : null,
     contact.email ? escHtml(contact.email) : null,
     ...(contact.links || []).map(l => l.url
-      ? `<a class="rp-contact-link" href="${escAttr(l.url)}" target="_blank">${escHtml(l.label || l.url)}</a>`
+      ? `<a class="rp-contact-link" href="${escAttr(normalizeUrl(l.url))}" target="_blank">${escHtml(l.label || l.url)}</a>`
       : null),
   ].filter(Boolean);
 
@@ -4667,7 +4759,7 @@ function renderResumeHTML(draft, p, limits = {}) {
     const tech    = (pp.tech || []).join(', ');
     const bullets = cap(pr.bullets != null ? pr.bullets : pp.highlights, L.projBullets);
     const nameEl  = url
-      ? `<a class="rp-proj-name" href="${escAttr(url)}" target="_blank">${escHtml(name)}</a>`
+      ? `<a class="rp-proj-name" href="${escAttr(normalizeUrl(url))}" target="_blank">${escHtml(name)}</a>`
       : `<span class="rp-proj-name-plain">${escHtml(name)}</span>`;
     return `<li class="rp-proj-item">${nameEl}${tech ? `<span class="rp-proj-stack"><em>Stack: ${escHtml(tech)}</em></span>` : ''}${bul(bullets)}</li>`;
   }).join('');
@@ -4691,7 +4783,7 @@ function renderResumeHTML(draft, p, limits = {}) {
   const pubItems = cap(p.publications, L.pubEntries).map(pub => {
     const titleEl = pub.title
       ? (pub.url
-          ? `<a class="rp-pub-title" href="${escAttr(pub.url)}" target="_blank">${escHtml(pub.title)}</a>`
+          ? `<a class="rp-pub-title" href="${escAttr(normalizeUrl(pub.url))}" target="_blank">${escHtml(pub.title)}</a>`
           : `<span class="rp-pub-title">${escHtml(pub.title)}</span>`)
       : '';
     const venueEl = (pub.venue || pub.year)
@@ -5182,6 +5274,207 @@ function switchView(view) {
     if (state.profile && hasProfileData(state.profile)) renderProfileSections();
     showProfileSubview('main');
   }
+  if (view === 'scanner') {
+    loadScannerState();
+  }
+}
+
+// ── Scanner ───────────────────────────────────────────────────────────────────
+async function loadScannerState() {
+  try {
+    const [settings, feed] = await Promise.all([bridge.scannerGetSettings(), bridge.scannerGetFeed()]);
+    state.scanner.settings = settings;
+    state.scanner.feed = feed;
+  } catch (_) {
+    showToast('Failed to load Scanner data');
+  }
+  renderScannerSettings();
+  renderScannerFeed();
+}
+
+// LinkedIn's own enumerated facet values (its search URL's f_WT/f_JT params) -
+// reused as-is rather than free text, so a search can't ask for something
+// LinkedIn's backend has no way to filter on. Keywords/location stay free
+// text since those genuinely are open-ended.
+const WORKPLACE_TYPE_OPTIONS = [
+  { value: 'onsite', label: 'On-site' },
+  { value: 'remote', label: 'Remote' },
+  { value: 'hybrid', label: 'Hybrid' },
+];
+const EMPLOYMENT_TYPE_OPTIONS = [
+  { value: 'full-time', label: 'Full-time' },
+  { value: 'part-time', label: 'Part-time' },
+  { value: 'contract', label: 'Contract' },
+  { value: 'temporary', label: 'Temporary' },
+  { value: 'internship', label: 'Internship' },
+  { value: 'volunteer', label: 'Volunteer' },
+  { value: 'other', label: 'Other' },
+];
+// Single-select (unlike workplace/employment type, which allow several at
+// once) - LinkedIn's own "Date posted" facet only ever applies one value.
+const DATE_POSTED_OPTIONS = [
+  { value: '', label: 'Any time' },
+  { value: 'day', label: 'Past 24 hours' },
+  { value: 'week', label: 'Past week' },
+  { value: 'month', label: 'Past month' },
+];
+
+function scannerChipGroup(index, group, options, selected) {
+  return `<div class="scanner-chip-group">${options.map(o => `
+    <button type="button" class="scanner-chip ${selected.includes(o.value) ? 'is-on' : ''}"
+      data-index="${index}" data-group="${group}" data-value="${o.value}">${escHtml(o.label)}</button>
+  `).join('')}</div>`;
+}
+
+function scannerSingleChipGroup(index, group, options, selectedValue) {
+  return `<div class="scanner-chip-group">${options.map(o => `
+    <button type="button" class="scanner-chip ${selectedValue === o.value ? 'is-on' : ''}"
+      data-index="${index}" data-group="${group}" data-value="${o.value}" data-single="1">${escHtml(o.label)}</button>
+  `).join('')}</div>`;
+}
+
+function renderScannerSettings() {
+  const checkbox = document.getElementById('scanner-include-recommended');
+  if (checkbox) checkbox.checked = !!state.scanner.settings.include_recommended;
+
+  const container = document.getElementById('scanner-searches');
+  if (!container) return;
+  const searches = state.scanner.settings.searches || [];
+  container.innerHTML = searches.map((s, i) => `
+    <div class="scanner-search-row" data-index="${i}">
+      <div class="scanner-search-inputs">
+        <input class="scanner-search-input" data-field="keywords" placeholder="Keywords (e.g. Backend Engineer)" value="${escAttr(s.keywords || '')}"/>
+        <input class="scanner-search-input" data-field="location" placeholder="Location (e.g. Bengaluru) - workplace type is set separately below" value="${escAttr(s.location || '')}"/>
+        <button class="scanner-search-remove ps-btn-icon" title="Remove search">×</button>
+      </div>
+      <div class="scanner-chip-row">
+        <span class="scanner-chip-label">Workplace type</span>
+        ${scannerChipGroup(i, 'workplace_types', WORKPLACE_TYPE_OPTIONS, s.workplace_types || [])}
+      </div>
+      <div class="scanner-chip-row">
+        <span class="scanner-chip-label">Employment type</span>
+        ${scannerChipGroup(i, 'employment_types', EMPLOYMENT_TYPE_OPTIONS, s.employment_types || [])}
+      </div>
+      <div class="scanner-chip-row">
+        <span class="scanner-chip-label">Date posted</span>
+        ${scannerSingleChipGroup(i, 'date_posted', DATE_POSTED_OPTIONS, s.date_posted || '')}
+      </div>
+    </div>`).join('') || '<div class="scanner-searches-empty">No configured searches yet - add one, or rely on the recommended feed alone.</div>';
+}
+
+function renderScannerFeed() {
+  const container = document.getElementById('scanner-feed');
+  if (!container) return;
+  const feed = (state.scanner.feed || []).filter(j => !j.dismissed);
+
+  if (!feed.length) {
+    container.innerHTML = '<div class="view-placeholder">No jobs scanned yet. Click "Scan now" to fetch from your logged-in LinkedIn session.</div>';
+    return;
+  }
+
+  container.innerHTML = feed.map(j => {
+    const key = j.job_id || j.link || '';
+    const sourceLabel = j.source === 'recommended' ? 'Recommended' : (j.source_label || 'Search');
+    return `
+    <div class="scanner-card" data-key="${escAttr(key)}">
+      <div class="scanner-card-main">
+        <div class="scanner-card-title">${escHtml(j.title || 'Untitled role')}</div>
+        <div class="scanner-card-meta">${escHtml(j.company || '')}${j.location ? ' · ' + escHtml(j.location) : ''}</div>
+        <div class="scanner-card-tags">
+          <span class="scanner-tag">${escHtml(sourceLabel)}</span>
+          ${j.posted_text ? `<span class="scanner-tag scanner-tag-dim">${escHtml(j.reposted ? 'Reposted ' + j.posted_text : j.posted_text)}</span>` : ''}
+          ${j.applicant_text ? `<span class="scanner-tag scanner-tag-dim">${escHtml(j.applicant_text)}</span>` : ''}
+          ${j.easy_apply ? '<span class="scanner-tag scanner-tag-dim">Easy Apply</span>' : ''}
+          ${j.linkedin_promoted ? '<span class="scanner-tag scanner-tag-promoted">Promoted</span>' : ''}
+          ${j.actively_recruiting ? '<span class="scanner-tag scanner-tag-dim">Actively recruiting</span>' : ''}
+          ${j.promoted ? '<span class="scanner-tag scanner-tag-added">Added to Jobs</span>' : ''}
+        </div>
+      </div>
+      <div class="scanner-card-actions">
+        ${j.link ? `<button class="scanner-card-link" data-url="${escAttr(j.link)}" title="Open on LinkedIn">Open</button>` : ''}
+        <button class="scanner-card-add" data-key="${escAttr(key)}" ${j.promoted ? 'disabled' : ''}>${j.promoted ? 'Added' : 'Add to Jobs'}</button>
+        <button class="scanner-card-dismiss" data-key="${escAttr(key)}" title="Dismiss">×</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function persistScannerSettingsFromForm() {
+  // Chip selections live only in state.scanner.settings (toggled in place by
+  // the chip click handler) - only keywords/location need reading from the
+  // DOM here since those are plain inputs.
+  const rows = (state.scanner.settings.searches || []).map((s, i) => {
+    const row = document.querySelector(`.scanner-search-row[data-index="${i}"]`);
+    return {
+      keywords: row ? row.querySelector('[data-field="keywords"]').value.trim() : (s.keywords || ''),
+      location: row ? row.querySelector('[data-field="location"]').value.trim() : (s.location || ''),
+      workplace_types: s.workplace_types || [],
+      employment_types: s.employment_types || [],
+      date_posted: s.date_posted || '',
+    };
+  });
+  const includeRecommended = document.getElementById('scanner-include-recommended').checked;
+  const settings = { include_recommended: includeRecommended, searches: rows };
+  state.scanner.settings = await bridge.scannerSaveSettings(settings);
+}
+
+async function runScannerScan() {
+  if (state.scanner.running) return;
+  const btn = document.getElementById('btn-scanner-run');
+  const status = document.getElementById('scanner-status');
+  state.scanner.running = true;
+  if (btn) { btn.loading = true; btn.disabled = true; }
+  if (status) status.textContent = 'Scanning your LinkedIn session…';
+
+  try {
+    const result = await bridge.scannerRun();
+    if (!result.ok) {
+      if (result.error === 'linkedin_login_required') {
+        showToast('LinkedIn login required - open the application browser (Settings) and log in, then scan again.');
+        if (status) status.textContent = 'Login required - see Settings > Browser Account.';
+      } else {
+        showToast('Scan failed: ' + (result.error || 'unknown error'));
+        if (status) status.textContent = 'Scan failed.';
+      }
+      return;
+    }
+    state.scanner.feed = result.feed;
+    renderScannerFeed();
+    if (status) status.textContent = `Found ${result.found} job${result.found === 1 ? '' : 's'} - ${state.scanner.feed.length} total in feed.`;
+    showToast(`Scan complete - ${result.found} job(s) found`);
+  } catch (e) {
+    showToast('Scan failed: ' + e);
+    if (status) status.textContent = 'Scan failed.';
+  } finally {
+    state.scanner.running = false;
+    if (btn) { btn.loading = false; btn.disabled = false; }
+  }
+}
+
+async function addScannerJobToJobs(key) {
+  const found = (state.scanner.feed || []).find(j => (j.job_id || j.link) === key);
+  if (!found) return;
+  // Reload from disk first - state.jobs is only populated by visiting the Jobs
+  // tab, and this action can run without that ever having happened. Skipping
+  // this reload would persist a truncated in-memory list over the real file.
+  await loadJobs();
+  const job = {
+    id: Date.now().toString(), title: found.title || 'Untitled Role',
+    company: found.company || '', link: found.link || '', description: '',
+    status: 'saved', match_score: null, match_result: null, score_history: [],
+    resume_draft: null, resume_extra_skills: [],
+    created_at: new Date().toISOString(),
+  };
+  state.jobs.unshift(job);
+  await persistJobs();
+  state.scanner.feed = await bridge.scannerPromote(key);
+  renderScannerFeed();
+  showToast('Added to Jobs - open it to paste the full description and analyze.');
+}
+
+async function dismissScannerJob(key) {
+  state.scanner.feed = await bridge.scannerDismiss(key);
+  renderScannerFeed();
 }
 
 // ── Utils ──────────────────────────────────────────────────────────────────────
@@ -5195,6 +5488,17 @@ function escHtml(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 function escAttr(s) { return escHtml(s); }
+
+// URLs typed without a scheme (e.g. "github.com/x") are valid to display as
+// text but useless as an href - the browser resolves them relative to the
+// current page, and Playwright's PDF export has no page to resolve them
+// against at all. Give anything schemeless an "https://" so the link actually
+// goes somewhere, in both the live preview and the exported PDF.
+function normalizeUrl(u) {
+  const s = String(u ?? '').trim();
+  if (!s) return s;
+  return /^[a-z][a-z0-9+.-]*:/i.test(s) ? s : `https://${s}`;
+}
 
 let toastTimer = null;
 function showToast(msg) {
@@ -5247,16 +5551,28 @@ function wire() {
     }
     const bullet = e.target.closest('[data-export-bullet]');
     if (bullet) {
-      const [kind, id, idxStr] = bullet.dataset.exportBullet.split(':');
+      const [kind, id, refStr] = bullet.dataset.exportBullet.split(':');
       const k = entryKey(kind, id);
+      const ref = parseExportBulletRef(refStr);
       const set = exportState.bullets[k] = exportState.bullets[k] || new Set();
-      if (bullet.checked) set.add(Number(idxStr)); else set.delete(Number(idxStr));
+      if (bullet.checked) set.add(ref); else set.delete(ref);
       // Patch in place rather than re-rendering the picker: a full rebuild on
       // every tick would lose scroll position and detach the checkbox the user
       // is still interacting with.
       bullet.closest('.export-bullet')?.classList.toggle('is-on', bullet.checked);
       const countEl = bullet.closest('.export-entry')?.querySelector('.export-entry-count');
       if (countEl) countEl.textContent = `${set.size}/${countEl.textContent.split('/')[1]}`;
+      renderExportPreview();
+    }
+  });
+  pick?.addEventListener('input', e => {
+    const custom = e.target.closest('[data-export-custom-bullet]');
+    if (custom) {
+      const [kind, id, ref] = custom.dataset.exportCustomBullet.split(':');
+      const k = entryKey(kind, id);
+      exportState.custom[k] = exportState.custom[k] || {};
+      exportState.custom[k][ref] = custom.value;
+      // Avoid a full re-render here too - it would steal focus mid-keystroke.
       renderExportPreview();
     }
   });
@@ -5283,6 +5599,58 @@ function wire() {
         exportState.order = arr;
         renderExportPicker(); renderExportPreview();
       }
+      return;
+    }
+    const entryMove = e.target.closest('[data-export-entry-move]');
+    if (entryMove) {
+      const [dir, kind, id] = entryMove.dataset.exportEntryMove.split(':');
+      const p = state.profile || {};
+      const list = kind === 'exp' ? (p.experience || []) : (p.projects || []);
+      const ids = list.map(x => String(x.id));
+      const arr = entryOrderFor(kind, ids);
+      const i = arr.indexOf(id);
+      const j = dir === 'up' ? i - 1 : i + 1;
+      if (i >= 0 && j >= 0 && j < arr.length) {
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+        exportState.entryOrder[kind] = arr;
+        renderExportPicker(); renderExportPreview();
+      }
+      return;
+    }
+    const bulletMove = e.target.closest('[data-export-bullet-move]');
+    if (bulletMove) {
+      const [dir, kind, id, refStr] = bulletMove.dataset.exportBulletMove.split(':');
+      const k = entryKey(kind, id);
+      const ref = parseExportBulletRef(refStr);
+      const arr = exportState.bulletOrder[k] || [];
+      const i = arr.indexOf(ref);
+      const j = dir === 'up' ? i - 1 : i + 1;
+      if (i >= 0 && j >= 0 && j < arr.length) {
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+        exportState.bulletOrder[k] = arr;
+        renderExportPicker(); renderExportPreview();
+      }
+      return;
+    }
+    const addBullet = e.target.closest('[data-export-add-bullet]');
+    if (addBullet) {
+      const k = addBullet.dataset.exportAddBullet;
+      const [kind, id] = [k.split(':')[0], k.slice(k.indexOf(':') + 1)];
+      const ref = `c${++exportState.customSeq}`;
+      exportState.custom[k] = exportState.custom[k] || {};
+      exportState.custom[k][ref] = '';
+      (exportState.bullets[k] = exportState.bullets[k] || new Set()).add(ref);
+      renderExportPicker(); renderExportPreview();
+      document.querySelector(`[data-export-custom-bullet="${kind}:${id}:${ref}"]`)?.focus();
+      return;
+    }
+    const removeBullet = e.target.closest('[data-export-remove-bullet]');
+    if (removeBullet) {
+      const [kind, id, ref] = removeBullet.dataset.exportRemoveBullet.split(':');
+      const k = entryKey(kind, id);
+      delete exportState.custom[k]?.[ref];
+      exportState.bullets[k]?.delete(ref);
+      renderExportPicker(); renderExportPreview();
       return;
     }
     if (e.target.closest('[data-export-summary-reset]')) {
@@ -5614,6 +5982,53 @@ function wire() {
   });
 
   window.addEventListener('resize', () => { scaleAllResumePanes(); updatePaneHeight(); });
+
+  // Scanner tab
+  document.getElementById('btn-scanner-run').addEventListener('click', runScannerScan);
+  document.getElementById('btn-scanner-add-search').addEventListener('click', async () => {
+    state.scanner.settings.searches = [...(state.scanner.settings.searches || []),
+      { keywords: '', location: '', workplace_types: [], employment_types: [], date_posted: '' }];
+    renderScannerSettings();
+  });
+  document.getElementById('scanner-include-recommended').addEventListener('sl-change', persistScannerSettingsFromForm);
+  document.getElementById('scanner-searches').addEventListener('click', e => {
+    const remove = e.target.closest('.scanner-search-remove');
+    if (remove) {
+      const row = remove.closest('.scanner-search-row');
+      const idx = Number(row.dataset.index);
+      state.scanner.settings.searches.splice(idx, 1);
+      renderScannerSettings();
+      persistScannerSettingsFromForm();
+      return;
+    }
+    const chip = e.target.closest('.scanner-chip');
+    if (chip) {
+      const idx = Number(chip.dataset.index);
+      const group = chip.dataset.group;
+      const value = chip.dataset.value;
+      const search = state.scanner.settings.searches[idx];
+      if (chip.dataset.single) {
+        search[group] = value;
+      } else {
+        const list = search[group] || (search[group] = []);
+        const pos = list.indexOf(value);
+        if (pos === -1) list.push(value); else list.splice(pos, 1);
+      }
+      renderScannerSettings();
+      persistScannerSettingsFromForm();
+    }
+  });
+  document.getElementById('scanner-searches').addEventListener('change', e => {
+    if (e.target.classList.contains('scanner-search-input')) persistScannerSettingsFromForm();
+  });
+  document.getElementById('scanner-feed').addEventListener('click', e => {
+    const link = e.target.closest('.scanner-card-link');
+    if (link) { bridge.openExternal(link.dataset.url); return; }
+    const add = e.target.closest('.scanner-card-add');
+    if (add && !add.disabled) { addScannerJobToJobs(add.dataset.key); return; }
+    const dismiss = e.target.closest('.scanner-card-dismiss');
+    if (dismiss) { dismissScannerJob(dismiss.dataset.key); return; }
+  });
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────────
