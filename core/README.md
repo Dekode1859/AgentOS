@@ -31,9 +31,30 @@ from agentos import run, AppConfig, WorkspaceFolder
 
 ## Consuming Core
 
-Apps add `core/` to `sys.path` (monorepo, shared-source) and `import agentos`.
+Two supported modes; both yield the same `import agentos`.
+
+**Shared source (monorepo).** Apps under `apps/` add `core/` to `sys.path` and
+import. This is how the in-repo apps consume Core.
+
+**Installed package.** Core builds as a wheel (`uv build`) named `agentos`, with
+`ui/` shipped as package data. Apps in their own repos depend on it:
+
+```toml
+[project]
+dependencies = ["agentos"]
+
+[tool.uv.sources]
+agentos = { path = "../AgentOS/core", editable = true }
+```
+
 Swapping this Core for another that implements the same public API requires no
-change to any app.
+change to any app, in either mode.
+
+Playwright is an optional extra (`agentos[browser]`) — Core never imports it at
+import time; it appears only inside the browser-agent subprocess payload.
+
+`requires-python` is capped below 3.13 because `runtime/shell.py` uses the
+stdlib `cgi` module, which 3.13 removed.
 
 ## Engine
 
