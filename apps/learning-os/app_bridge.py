@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from agentos.bridge import Bridge
-
+from knowledge import AgentRunner, JobManager
 from source_pipeline import SourcePipeline
 from wiki_library import WikiLibrary
-from knowledge import AgentRunner, JobManager
+
+from agentos.bridge import Bridge
 
 
 class LexiconBridge(Bridge):

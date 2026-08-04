@@ -44,12 +44,11 @@ import json
 import queue
 import shutil
 import threading
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 import requests
-
 from curator import Curator
 
 
@@ -553,7 +552,7 @@ class JobManager:
             try:
                 manifest = json.loads(raw)
             except json.JSONDecodeError as exc:
-                raise RuntimeError(f"Indexer manifest was not valid JSON: {exc}")
+                raise RuntimeError(f"Indexer manifest was not valid JSON: {exc}") from exc
 
             scratch_note_abs = self._workspace / "wiki" / scratch_note_rel
             if not scratch_note_abs.exists():

@@ -977,7 +977,7 @@ const bridge = (() => {
     removeProviderKey:(pid)          => call('remove_provider_key', pid),
     setDefaultModel:  (pid, mid)     => call('set_default_model', pid, mid),
     openExternal:     (url)          => call('open_external', url),
-    exportResumePdf:  (html, fname, dir) => call('export_resume_pdf', html, fname, dir || ''),
+    exportResumePdf:  (html, fname, dir) => call('export_pdf', html, fname, dir || ''),
     openFolderDialog: ()             => call('open_folder_dialog'),
     browserOpen:              (url) => call('browser_open', url),
     browserScrape:            (url) => call('browser_scrape', url),

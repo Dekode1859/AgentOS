@@ -8,16 +8,16 @@ Like every AgentOS app, this is only configuration + domain assets. Execution
 (window, OpenCode runtime, storage, providers) comes from AgentOS Core. This app
 ships its own UI (an About Me dashboard) via AppConfig.ui_dir.
 """
-from pathlib import Path
 import sys
+from pathlib import Path
 
-# Consume AgentOS Core as a shared source dir (monorepo).
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
-
-from agentos import run, AppConfig, WorkspaceFolder
+# Consume AgentOS Core as shared source (monorepo). Apps in their own
+# repos install the `agentos` package instead and drop these two lines.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app_bridge import JobSearchBridge
 
+from agentos import AppConfig, WorkspaceFolder, run
 
 APP = AppConfig(
     app_id="jobsearch-os",

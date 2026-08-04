@@ -12,7 +12,6 @@ from pathlib import Path
 
 import requests
 
-
 # Curated providers shown prominently in the settings UI. Generic infra list.
 FEATURED_PROVIDERS = [
     "opencode",     # OpenCode Zen — always connected, free models

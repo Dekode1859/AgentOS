@@ -1,21 +1,21 @@
 from __future__ import annotations
 
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-import sys
-
 
 ROOT = Path(__file__).resolve().parents[1]
-CORE = ROOT / "core"
+CORE = ROOT
 APP = ROOT / "apps" / "learning-os"
 sys.path.insert(0, str(APP))
 sys.path.insert(0, str(CORE))
 
-from agentos.config import AppConfig, WorkspaceFolder  # noqa: E402
-from app_bridge import LexiconBridge  # noqa: E402
 import source_pipeline as source_pipeline_mod  # noqa: E402
+from app_bridge import LexiconBridge  # noqa: E402
+
+from agentos.config import AppConfig, WorkspaceFolder  # noqa: E402
 
 
 class FakeServer:

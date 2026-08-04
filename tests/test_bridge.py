@@ -1,5 +1,5 @@
 """
-Characterization tests for core/agentos/bridge.py.
+Characterization tests for agentos/bridge.py.
 
 Locks the current behavior of Bridge before refactoring. Uses stdlib unittest
 (no new deps). The workspace is redirected to a temp dir via WORKSPACE_PATH,
@@ -17,11 +17,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-CORE = Path(__file__).resolve().parents[1] / "core"
-sys.path.insert(0, str(CORE))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
-from agentos import bridge as bridge_mod          # noqa: E402
-from agentos.bridge import Bridge                  # noqa: E402
+from agentos import bridge as bridge_mod  # noqa: E402
+from agentos.bridge import Bridge  # noqa: E402
 from agentos.config import AppConfig, WorkspaceFolder  # noqa: E402
 
 

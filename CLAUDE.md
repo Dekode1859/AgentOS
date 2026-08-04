@@ -38,7 +38,7 @@ Credentials are stored app-locally in `.opencode-home/` (not `~/.opencode`), so 
 
 ```
 AgentOS/
-├── core/agentos/        # Generic runtime — zero domain knowledge
+├── agentos/             # Generic runtime — zero domain knowledge (the package)
 └── apps/
     ├── learning-os/     # Reference implementation
     └── jobsearch-os/    # V0 (About Me dashboard)
@@ -46,10 +46,10 @@ AgentOS/
 
 ### Core ↔ App Contract
 
-The sole seam between Core and any app is the `AppConfig` object (`core/agentos/config.py`). Every app's `main.py` is exactly one object + one call:
+The sole seam between Core and any app is the `AppConfig` object (`agentos/config.py`). Every app's `main.py` is exactly one object + one call:
 
 ```python
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # monorepo apps only
 from agentos import run, AppConfig, WorkspaceFolder
 
 run(AppConfig(
@@ -72,15 +72,15 @@ Agent definitions live in the app's `opencode.json`. Core reads them but never d
 
 | File | Role |
 |------|------|
-| `core/agentos/__init__.py` | Public API: `run()`, `AppConfig`, `WorkspaceFolder` |
-| `core/agentos/config.py` | Contract types |
-| `core/agentos/runtime/shell.py` | PyWebView window + HTTP server entry point |
-| `core/agentos/runtime/server.py` | OpenCode subprocess lifecycle |
-| `core/agentos/runtime/paths.py` | Dev vs PyInstaller bundle path resolution |
-| `core/agentos/bridge.py` | JS↔Python API (config, storage, providers) |
-| `core/agentos/storage/__init__.py` | Generic file CRUD — no folder semantics |
-| `core/agentos/providers/__init__.py` | LLM provider abstraction |
-| `core/agentos/ui/app.js` | Shared chat UI (sessions, SSE stream, agent picker) |
+| `agentos/__init__.py` | Public API: `run()`, `AppConfig`, `WorkspaceFolder` |
+| `agentos/config.py` | Contract types |
+| `agentos/runtime/shell.py` | PyWebView window + HTTP server entry point |
+| `agentos/runtime/server.py` | OpenCode subprocess lifecycle |
+| `agentos/runtime/paths.py` | Dev vs PyInstaller bundle path resolution |
+| `agentos/bridge.py` | JS↔Python API (config, storage, providers) |
+| `agentos/storage/__init__.py` | Generic file CRUD — no folder semantics |
+| `agentos/providers/__init__.py` | LLM provider abstraction |
+| `agentos/ui/app.js` | Shared chat UI (sessions, SSE stream, agent picker) |
 
 ### Execution Model
 
@@ -91,11 +91,11 @@ Agent definitions live in the app's `opencode.json`. Core reads them but never d
 
 ### Storage
 
-`core/agentos/storage/__init__.py` exposes `read()`, `write()`, `list_dir()`, `delete()`, `count_dir()`. All paths are relative-safe (`_safe()` prevents traversal). Core has no opinion on what folders mean — that's entirely `AppConfig.workspace_folders`.
+`agentos/storage/__init__.py` exposes `read()`, `write()`, `list_dir()`, `delete()`, `count_dir()`. All paths are relative-safe (`_safe()` prevents traversal). Core has no opinion on what folders mean — that's entirely `AppConfig.workspace_folders`.
 
 ### Custom vs Shared UI
 
-- **Shared chat UI** (`core/agentos/ui/`) — used when `ui_dir` is unset; built with vanilla JS + Shoelace 2.19.1 web components + Lucide icons
+- **Shared chat UI** (`agentos/ui/`) — used when `ui_dir` is unset; built with vanilla JS + Shoelace 2.19.1 web components + Lucide icons
 - **Custom frontend** — set `ui_dir="ui"` in `AppConfig`; app ships its own HTML/JS/CSS (see `apps/jobsearch-os/ui/`)
 
 ## Creating a New App
@@ -125,7 +125,7 @@ Core must remain grep-clean of domain words (learning, curriculum, job, resume, 
 The Scanner tab (`apps/jobsearch-os/scanner/`, `app_bridge.py`) headlessly pulls jobs from
 the user's logged-in LinkedIn session via the shared `workspace/browser-profile` Chromium
 profile. It's app-owned, not Core — LinkedIn selectors/URLs live entirely in
-`apps/jobsearch-os/scanner/linkedin_scan.py`, kept out of `core/agentos` per the Core
+`apps/jobsearch-os/scanner/linkedin_scan.py`, kept out of `agentos` per the Core
 Purity Rules below. Scanned jobs land in their own `workspace/jobs/scanner-feed.json`,
 separate from the user's tracked `jobs.json`, until explicitly promoted.
 

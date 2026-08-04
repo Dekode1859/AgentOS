@@ -1,7 +1,7 @@
 """CareerForge's Bridge extension — Scanner methods only.
 
-Uses AppConfig.bridge_cls (core/agentos/config.py) so Scanner's LinkedIn
-specifics never have to live in core/agentos, per the Core-purity rule in
+Uses AppConfig.bridge_cls (agentos/config.py) so Scanner's LinkedIn
+specifics never have to live in the agentos package, per the Core-purity rule in
 CLAUDE.md ("Core must remain grep-clean of domain words").
 """
 from __future__ import annotations
@@ -11,11 +11,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
-
-from agentos.bridge import Bridge  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scanner import store  # noqa: E402
+
+from agentos.bridge import Bridge  # noqa: E402
 
 _SCAN_SCRIPT = Path(__file__).resolve().parent / "scanner" / "linkedin_scan.py"
 

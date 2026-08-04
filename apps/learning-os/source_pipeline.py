@@ -6,7 +6,7 @@ import json
 import mimetypes
 import re
 import shutil
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -16,7 +16,6 @@ from docx import Document
 from ebooklib import ITEM_DOCUMENT, epub
 from markdownify import markdownify as html_to_markdown
 from pypdf import PdfReader
-
 
 SUPPORTED_EXTENSIONS = {
     ".pdf": "pdf",

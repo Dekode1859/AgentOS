@@ -7,7 +7,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from core.agentos.runtime.shell import _make_ui_handler
+from agentos.runtime.shell import _make_ui_handler
 
 
 class FakeBridge:

@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 from source_pipeline import slugify

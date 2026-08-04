@@ -4,17 +4,17 @@ Lexicon.ai - a personal, source-first knowledge workspace.
 This app owns the domain workflow for raw sources, deterministic processing,
 and an LLM-maintained wiki. Execution mechanics stay in AgentOS Core.
 """
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # AgentOS Core is consumed as a shared source directory (monorepo): add the
 # sibling core/ to the path so `import agentos` resolves. Swapping the Core
 # implementation behind this path requires no change to this app.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from agentos import run, AppConfig, WorkspaceFolder
 from app_bridge import LexiconBridge
 
+from agentos import AppConfig, WorkspaceFolder, run
 
 APP = AppConfig(
     app_id="lexicon",

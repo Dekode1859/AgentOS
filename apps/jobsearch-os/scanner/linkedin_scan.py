@@ -1,7 +1,7 @@
 """Headless LinkedIn job scan — standalone script, run as a subprocess.
 
-Mirrors the pattern already used by core/agentos/bridge.py's headless
-browser_scrape branch and export_resume_pdf: Playwright runs in its own
+Mirrors the pattern already used by agentos/bridge.py's headless
+browser_scrape branch and export_pdf: Playwright runs in its own
 process (not inside the pywebview app) to avoid thread/greenlet conflicts,
 and reuses the same persistent Chromium profile dir so an existing LinkedIn
 login carries over with no separate auth flow.
@@ -19,7 +19,7 @@ Prints exactly one JSON line to stdout:
     {"ok": true, "jobs": [...]}
     {"ok": false, "error": "linkedin_login_required" | "<message>"}
 
-This is deliberately app-owned (not core/agentos) — LinkedIn-specific
+This is deliberately app-owned (not agentos) — LinkedIn-specific
 selectors and URL construction don't belong in a domain-ignorant Core.
 """
 from __future__ import annotations

@@ -16,10 +16,16 @@ TEXT_SUFFIXES = (".md", ".txt")
 
 
 def _safe(root: Path, rel: str) -> Path:
-    """Resolve ``rel`` inside ``root``; raise if it escapes."""
-    root = Path(root)
+    """Resolve ``rel`` inside ``root``; raise if it escapes.
+
+    Containment is checked on the resolved path hierarchy, not on the string
+    prefix: a sibling directory whose name merely starts with the root's name
+    (root ``/data/ws`` vs ``/data/ws-evil``) is outside the root and must be
+    rejected, even though its path string starts with the root's.
+    """
+    root = Path(root).resolve()
     resolved = (root / rel).resolve()
-    if not str(resolved).startswith(str(root.resolve())):
+    if resolved != root and root not in resolved.parents:
         raise ValueError(f"Path '{rel}' escapes the storage root")
     return resolved
 

@@ -2,18 +2,17 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-import sys
-
 
 APP_ROOT = Path(__file__).resolve().parents[1] / "apps" / "learning-os"
 sys.path.insert(0, str(APP_ROOT))
 
+from knowledge import JobManager  # noqa: E402
 from source_pipeline import SourcePipeline  # noqa: E402
 from wiki_library import WikiLibrary  # noqa: E402
-from knowledge import JobManager  # noqa: E402
 
 
 class FakeRunner:
@@ -151,7 +150,7 @@ class KnowledgePipelineTests(unittest.TestCase):
 
     def test_status_counts_indexed_and_unindexed(self):
         first = self._add_source("a.txt", "Alpha content.\n")
-        second = self._add_source("b.txt", "Beta content.\n")
+        self._add_source("b.txt", "Beta content.\n")   # unindexed, for the count
         jm = self._manager(FakeRunner(self.workspace))
         self._run_one(jm, first["id"], first["title"])
 

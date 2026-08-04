@@ -3,7 +3,7 @@ Browser-agent subprocess script (payload for ``Bridge.browser_open``).
 
 Kept as a string constant rather than executable module code on purpose: the
 runtime launches it via ``python -c SCRIPT`` (see ``bridge.browser_open`` and
-``export_resume_pdf`` for the same pattern), and embedding it in an imported
+``export_pdf`` for the same pattern), and embedding it in an imported
 module keeps the existing subprocess/packaging behavior byte-for-byte identical
 while getting ~275 lines of payload out of bridge.py.
 

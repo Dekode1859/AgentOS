@@ -7,7 +7,7 @@ It is application-independent: the only app-specific input is the ``AppConfig``.
 from __future__ import annotations
 
 import atexit
-import cgi
+import email
 import http.server
 import json
 import os
@@ -19,6 +19,30 @@ from pathlib import Path
 from ..config import AppConfig
 from . import paths
 from .server import OpenCodeServer
+
+
+def _parse_multipart_files(body: bytes, content_type: str) -> list[tuple[str, bytes]]:
+    """Extract the ``files`` parts of a multipart/form-data body.
+
+    Returns ``[(filename, content), ...]`` in document order. Built on the
+    stdlib ``email`` parser rather than ``cgi.FieldStorage``, which Python 3.13
+    removed; keeping this in Core means apps do not need a multipart dependency.
+    Malformed bodies yield an empty list — the caller answers 400.
+    """
+    header = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode()
+    try:
+        message = email.message_from_bytes(header + body)
+    except Exception:
+        return []
+    if not message.is_multipart():
+        return []
+
+    out: list[tuple[str, bytes]] = []
+    for part in message.get_payload():
+        if part.get_param("name", header="content-disposition") != "files":
+            continue
+        out.append((part.get_filename() or "", part.get_payload(decode=True) or b""))
+    return out
 
 
 def _load_env(config: AppConfig):
@@ -97,29 +121,24 @@ def _make_ui_handler(ui_dir: str, bridge):
             if "multipart/form-data" not in content_type:
                 return self._write_json({"ok": False, "error": "Expected multipart/form-data"}, status=400)
 
-            form = cgi.FieldStorage(
-                fp=self.rfile,
-                headers=self.headers,
-                environ={
-                    "REQUEST_METHOD": "POST",
-                    "CONTENT_TYPE": content_type,
-                    "CONTENT_LENGTH": self.headers.get("content-length", "0"),
-                },
-            )
+            try:
+                length = int(self.headers.get("content-length") or 0)
+            except ValueError:
+                return self._write_json({"ok": False, "error": "Invalid Content-Length"}, status=400)
 
-            uploads = form["files"] if "files" in form else []
-            if not isinstance(uploads, list):
-                uploads = [uploads] if uploads is not None else []
+            uploads = _parse_multipart_files(self.rfile.read(length) if length > 0 else b"",
+                                             content_type)
             if not uploads:
                 return self._write_json({"ok": False, "error": "No files uploaded"}, status=400)
 
             with tempfile.TemporaryDirectory(prefix="agentos-upload-") as tmpdir:
                 paths_to_import: list[str] = []
-                for index, upload in enumerate(uploads):
-                    filename = Path(upload.filename or f"upload-{index}").name or f"upload-{index}"
+                for index, (raw_name, content) in enumerate(uploads):
+                    # Basename only: a part may claim "../../etc/passwd" as its
+                    # filename, and the temp dir must stay the write boundary.
+                    filename = Path(raw_name or f"upload-{index}").name or f"upload-{index}"
                     destination = Path(tmpdir) / filename
-                    with destination.open("wb") as handle:
-                        handle.write(upload.file.read())
+                    destination.write_bytes(content)
                     paths_to_import.append(str(destination))
                 try:
                     result = target(paths_to_import)

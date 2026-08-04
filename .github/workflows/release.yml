@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (e.g. v0.2.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish a GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Check the tag matches agentos.__version__
+        # The version is single-sourced from the package; a tag that disagrees
+        # would publish artifacts whose filenames contradict their name.
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION=$(python -c "import re,pathlib; \
+            print(re.search(r'__version__ = \"([^\"]+)\"', \
+            pathlib.Path('agentos/__init__.py').read_text()).group(1))")
+          echo "tag=$TAG package=$VERSION"
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::Tag $TAG does not match agentos.__version__ ($VERSION)."
+            exit 1
+          fi
+
+      - name: Build
+        run: uv build
+
+      - name: Verify the built version matches too
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          ls dist/agentos-${TAG#v}-py3-none-any.whl
+          ls dist/agentos-${TAG#v}.tar.gz
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/*.whl
+            dist/*.tar.gz

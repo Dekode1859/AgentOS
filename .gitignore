@@ -20,4 +20,14 @@ dist/
 # macOS
 .DS_Store
 
-apps\*\workspace
+# User data. The example apps write real content here when run — job records,
+# extracted profiles, wiki notes, browser profiles. Directory structure is kept
+# via .gitkeep; nothing inside it belongs in a public repository.
+# (The previous `apps\*\workspace` entry used backslashes and never matched.)
+workspace/
+apps/*/workspace/*
+!apps/*/workspace/*/
+!apps/*/workspace/**/.gitkeep
+
+# Personal scratch — drafts, profile blurbs. Not part of the project.
+*_PROJECT_BLURB.md

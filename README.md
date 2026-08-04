@@ -1,88 +1,203 @@
 # AgentOS
 
-A deterministic runtime engine for executing AI-driven workflows that are
-defined **entirely outside** the core system. AgentOS is not a framework, a
-library, or a template — it is a **runtime with a swapable core**.
+[![CI](https://github.com/Dekode1859/AgentOS/actions/workflows/ci.yml/badge.svg)](https://github.com/Dekode1859/AgentOS/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://github.com/Dekode1859/AgentOS)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-## The architectural invariant
+A runtime for AI desktop apps, built around one rule: **the engine knows nothing
+about the app**.
 
-> Replace the Core of any AgentOS app with the Core of another and both must
-> still run unmodified. Delete any app and Core remains unchanged and
-> functional.
+Replace the Core under any AgentOS app with the Core from another and both still
+run, unmodified. Delete an app and Core is untouched. It is not a framework, a
+library of helpers, or a starter template — it is a runtime with a hard edge.
 
-Core owns **how** execution happens (runtime, sessions, streaming, storage
-primitives, providers, UI bus). Apps own **what** the system does (agents,
-prompts, schemas, workspace meaning, branding).
+Core owns *how* execution happens: the window, the agent runtime's process
+lifecycle, sessions, streaming, storage primitives, provider credentials, the
+JS↔Python bridge. Apps own *what* the system does: agents, prompts, schemas,
+what a folder means, branding.
+
+## Install
+
+There is no PyPI release. Install from git, pinned to a tag:
+
+```bash
+uv add "agentos @ git+https://github.com/Dekode1859/AgentOS@v0.2.0"
+```
+
+```bash
+pip install "agentos @ git+https://github.com/Dekode1859/AgentOS@v0.2.0"
+```
+
+For local development against a checkout beside your app:
+
+```toml
+# your-app/pyproject.toml
+[project]
+dependencies = ["agentos"]
+
+[tool.uv.sources]
+agentos = { path = "../AgentOS", editable = true }
+```
+
+Playwright is optional and only needed if your app drives a browser through
+`Bridge.browser_open`: install `agentos[browser]`.
+
+### The execution engine
+
+Core hosts [OpenCode](https://opencode.ai) as its execution engine — a
+self-contained ~60 MB native binary. A pure-Python wheel cannot carry it, so
+`agentos` ships a command to fetch it:
+
+```bash
+agentos install-engine     # downloads the pinned build into a per-user cache
+agentos engine-info        # where it resolved from, which version, is it supported
+```
+
+**Nothing is ever downloaded implicitly.** `run()` resolves an engine but never
+fetches one; an app that wants a one-time install calls `agentos.engine.ensure()`
+from its own bootstrap, where the cost is visible. Resolution order:
+
+1. `AGENTOS_OPENCODE_BIN` — an explicit path, always wins
+2. `opencode` on PATH — npm, Homebrew, or the official install script
+3. The per-user cache — a build `install-engine` fetched earlier
+
+If none is found, startup fails with a message naming the command to run. Core
+declares the engine range it was tested against and warns at launch when the
+running engine falls outside it, rather than refusing to start — an engine a
+patch ahead almost always works, and being blocked by someone else's release is
+worse than being told.
+
+## Write an app
+
+An app's entry point is one object and one call. That object is the *only* place
+an app injects identity into Core.
+
+```python
+from pathlib import Path
+from agentos import run, AppConfig, WorkspaceFolder
+
+run(AppConfig(
+    app_id="recipe-box",                  # data-isolation id
+    app_title="Recipe Box",               # window title + UI header
+    app_root=Path(__file__).resolve().parent,
+    workspace_dirname="workspace",
+    workspace_folders=(
+        WorkspaceFolder("inbox",   "inbox", "Inbox"),
+        WorkspaceFolder("recipes", "book",  "Recipes"),
+    ),
+    default_capture_folder="inbox",
+    default_agent="recipe-writer",
+))
+```
+
+Agents live in the app's `opencode.json`, with their own prompts. Core reads
+them so the UI can offer them, and never defines one — adding a capability is
+writing a prompt, not touching the runtime.
+
+By default the app gets the shared chat UI. Set `ui_dir="ui"` and it serves your
+own front-end against the same bridge instead. To add methods to that bridge,
+subclass `Bridge` and pass `bridge_cls` — which is how an app adds behavior
+without Core learning anything about it.
+
+## The contract
+
+| Field | Meaning |
+|-------|---------|
+| `app_id` | Data-isolation id; names the app-data dir in a packaged build. |
+| `app_title` | Window title and UI header. |
+| `app_root` | Directory holding `opencode.json` and the workspace. |
+| `ui_dir` | Serve your own front-end; unset means the shared chat UI. |
+| `bridge_cls` | `Bridge` subclass adding app-specific JS↔Python methods. |
+| `workspace_dirname` | Name of the data root under `app_root`. |
+| `workspace_folders` | The app's folder taxonomy — Core treats these as opaque. |
+| `default_capture_folder` | Where ad-hoc notes are written. |
+| `default_agent` | Agent selected on launch. |
+| `window_size` / `min_size` | Window geometry. |
+
+Everything else is Core's business. `agentos.__all__` is exactly
+`run`, `AppConfig`, `WorkspaceFolder`.
+
+## Keeping the boundary honest
+
+The rule is easy to state and constantly tempting to break, because every leak
+looks reasonable in the moment. The test applied to anything proposed for Core:
+*would this make sense in a cooking-recipe app?* If not, it belongs to the app.
+
+That rule is executable, not aspirational. Two suites enforce it:
+
+[`tests/test_agentos_contract.py`](tests/test_agentos_contract.py) fails the
+build if Core source contains domain vocabulary. It has already caught a real
+violation: a `Bridge.export_resume_pdf` method whose implementation was entirely
+generic but whose *name* had leaked in from an app. It is now `export_pdf`.
+
+[`tests/test_swap_invariant.py`](tests/test_swap_invariant.py) loads **both
+frozen apps against the current Core**, exactly as the runtime does, and asserts
+they still work: their `AppConfig` is accepted, their `Bridge` subclass
+instantiates, Core loads the agents they declare, and every bridge method their
+front-ends call still exists. That last check matters because app UIs name
+bridge methods as *strings* over HTTP — a Core rename passes every import and
+type check, then fails when a user clicks. Core's public API and its
+JS-callable bridge surface are pinned as explicit lists, so changing either is a
+deliberate act with a changelog entry, not an accident.
 
 ## Layout
 
 ```
 AgentOS/
-├── core/                      # AgentOS Core — generic runtime (no domain knowledge)
-│   └── agentos/
-│       ├── __init__.py        # public API: run(), AppConfig, WorkspaceFolder
-│       ├── config.py          # the Core↔App contract
-│       ├── runtime/           # desktop shell, OpenCode lifecycle, paths
-│       ├── storage/           # generic file primitives (no folder semantics)
-│       ├── providers/         # LLM provider abstraction
-│       ├── agents/            # reads app-declared agents (executes none)
-│       ├── tools/             # delegated to OpenCode (see README)
-│       ├── events/            # OpenCode SSE → UI bus (see README)
-│       ├── bridge.py          # JS↔Python UI bridge
-│       └── ui/                # generic chat UI (branding via config)
-├── apps/
-│   ├── learning-os/           # reference implementation (consumes Core)
-│   └── jobsearch-os/          # scaffold for the next app (no logic yet)
+├── agentos/              # the package — generic runtime, zero domain knowledge
+│   ├── config.py         # the Core↔App contract
+│   ├── runtime/          # desktop shell, OpenCode lifecycle, path resolution
+│   ├── storage/          # file primitives, no folder semantics
+│   ├── providers/        # provider credentials and model switching
+│   ├── agents/           # reads app-declared agents (executes none)
+│   ├── bridge.py         # JS↔Python bridge
+│   └── ui/               # shared chat UI (branding injected via config)
+├── apps/                 # example apps, frozen — proof the swap works
+│   ├── learning-os/      # shared chat UI
+│   └── jobsearch-os/     # custom UI + custom bridge
+├── tests/
 └── docs/
-    ├── architecture-audit.md  # Phase 1: what was extracted and why
-    └── parity-checklist.md    # Phase 3: behavioral equivalence
 ```
 
-## Run an app
+The apps under `apps/` are kept as evidence that Core runs more than one domain,
+with different UIs and different agents. They consume Core as shared source via
+`sys.path`; apps in their own repositories install the package instead.
+
+## Development
 
 ```bash
-cd apps/learning-os
-make install
-make auth-setup     # add a provider credential
-make run
+uv sync --group dev --group apps
+uv run pytest tests -q      # Core suite + the swap-invariant baseline
+uv run ruff check .
+uv build                    # wheel + sdist
 ```
 
-Requires the `opencode` CLI on PATH:
-`curl -fsSL https://opencode.ai/install | bash`
+The `apps` group installs the frozen example apps' dependencies. They are not
+Core dependencies — they exist so the swap invariant is tested against both
+apps. Without them that half of the baseline skips, and a skipped baseline reads
+as green.
 
-## The Core↔App contract
+`tests/run_all.py` additionally runs the JS tests, which need `node`.
 
-An app is a `main.py` that declares an `AppConfig` and calls `agentos.run()`:
+To run an example app:
 
-```python
-import sys; from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
-from agentos import run, AppConfig, WorkspaceFolder
-
-run(AppConfig(
-    app_id="learning-os",
-    app_title="Learning OS",
-    app_root=Path(__file__).resolve().parent,
-    workspace_folders=(WorkspaceFolder("raw", "inbox"), ...),
-    default_agent="session-planner",
-))
+```bash
+cd apps/learning-os && make install && make run
 ```
 
-That object is the **only** place an app injects identity into Core. No Core
-file references any app — see `docs/architecture-audit.md`.
+## Releasing
 
-## Status
+The version lives in `agentos/__init__.py` and the build reads it from there.
+To cut a release: bump `__version__`, update [CHANGELOG.md](CHANGELOG.md), then
+push a matching tag.
 
-- ✅ Phase 1 — Architecture audit
-- ✅ Phase 2 — AgentOS Core extracted (domain-clean)
-- ✅ Phase 3 — Learning OS migrated onto Core; parity checklist
-- 🟡 Phase 4 — Job Search OS **V0 (About Me) built**: own-UI app on the same
-  Core, résumé ingest → `profile` agent → schema → render/edit. V1 (job import)
-  and V2 (matching) are future work.
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
 
-### Core extension for V0 (one generic field)
+CI refuses a tag that disagrees with the package version, then builds and
+attaches the wheel and sdist to a GitHub Release.
 
-Job Search OS ships its own front-end, so Core gained a single generic field:
-`AppConfig.ui_dir`. When set, the shell serves that directory instead of the
-shared chat UI. Learning OS leaves it unset → unchanged. No domain words entered
-Core; the swap invariant still holds.
+## License
+
+MIT — see [LICENSE](LICENSE).

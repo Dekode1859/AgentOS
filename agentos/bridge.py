@@ -10,17 +10,15 @@ to forward — it never branches on what the app *is*.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import webview
 
 from . import agents as agents_mod
 from . import providers as providers_mod
 from . import storage
+from .browser_agent import SCRIPT as _BROWSER_AGENT
 from .config import AppConfig
 from .runtime import paths
 from .runtime.server import OpenCodeServer
-from .browser_agent import SCRIPT as _BROWSER_AGENT
 
 
 class Bridge:
@@ -175,7 +173,10 @@ class Bridge:
         """Launch a headed Playwright Chromium browser at the given URL.
         Saves the current app window state, tiles both windows side-by-side,
         and returns {ok, port} for the local HTTP control API."""
-        import subprocess, sys, json, time
+        import json
+        import subprocess
+        import sys
+        import time
 
         self._browser_close_internal()
 
@@ -203,8 +204,8 @@ class Bridge:
                     # synchronously before Chrome reads the layout half a second later.
                     if sys.platform == "darwin":
                         try:
-                            from AppKit import NSApplication, NSRect, NSPoint, NSSize
                             import objc as _objc
+                            from AppKit import NSApplication, NSPoint, NSRect, NSSize
                             _nsw = NSApplication.sharedApplication().mainWindow()
                             if _nsw:
                                 _sf = (_nsw.screen() or
@@ -278,7 +279,8 @@ class Bridge:
         if not port:
             return {"ok": False, "error": "Browser not open"}
         try:
-            import urllib.request, json as _json
+            import json as _json
+            import urllib.request
             req = urllib.request.Request(
                 f"http://127.0.0.1:{port}/detect-fields",
                 method="POST",
@@ -297,7 +299,7 @@ class Bridge:
         already running, route the scrape through it (one Chrome per profile
         dir is the OS limit) using a throwaway tab. Otherwise launch a dedicated
         headless Chromium with the same persistent profile so logged-in pages
-        (LinkedIn, etc.) resolve — modeled on the export_resume_pdf subprocess.
+        resolve — modeled on the export_pdf subprocess.
         """
         url = (url or "").strip()
         if not url:
@@ -307,7 +309,8 @@ class Bridge:
         port = getattr(self, "_browser_port", None)
         if port:
             try:
-                import urllib.request, json as _json
+                import json as _json
+                import urllib.request
                 req = urllib.request.Request(
                     f"http://127.0.0.1:{port}/scrape",
                     method="POST",
@@ -320,7 +323,9 @@ class Bridge:
                 return {"ok": False, "error": str(e)}
 
         # ── Otherwise scrape headless with the persistent profile ─────────────
-        import subprocess, sys, json as _json
+        import json as _json
+        import subprocess
+        import sys
         profile_dir = str(self._workspace / "browser-profile")
         script = (
             "import sys, json, pathlib\n"
@@ -394,7 +399,8 @@ class Bridge:
     def browser_check_google_login(self) -> dict:
         """Verify Google session cookies exist and extract the account email.
         On success, writes profile-meta.json so the profile is marked as set up."""
-        import json as _json, urllib.request
+        import json as _json
+        import urllib.request
         port = getattr(self, "_browser_port", None)
         if not port:
             return {"ok": False, "error": "Browser not open"}
@@ -520,7 +526,8 @@ class Bridge:
         return self._split_halves(x, y, w, h, exact_remainder=True)
 
     def _tile_layout_windows(self):
-        import ctypes, ctypes.wintypes
+        import ctypes
+        import ctypes.wintypes
         # SPI_GETWORKAREA (0x30) — screen area excluding the taskbar
         rect = ctypes.wintypes.RECT()
         ctypes.windll.user32.SystemParametersInfoW(0x30, 0, ctypes.byref(rect), 0)
@@ -529,7 +536,8 @@ class Bridge:
         return self._split_halves(x, y, w, h)
 
     def _tile_layout_linux(self):
-        import subprocess, re
+        import re
+        import subprocess
         out = subprocess.check_output(["xrandr", "--current"], timeout=3).decode()
         m   = re.search(r"current (\d+) x (\d+)", out)
         if not m:
@@ -557,7 +565,8 @@ class Bridge:
                     state["w"] = int(f.size.width)
                     state["h"] = int(f.size.height)
             elif sys.platform == "win32":
-                import ctypes, ctypes.wintypes
+                import ctypes
+                import ctypes.wintypes
                 hwnd = self._get_win32_hwnd()
                 if hwnd:
                     rect = ctypes.wintypes.RECT()
@@ -573,7 +582,8 @@ class Bridge:
 
     def _get_win32_hwnd(self):
         """Find the main app HWND by matching window title (Windows only)."""
-        import ctypes, ctypes.wintypes
+        import ctypes
+        import ctypes.wintypes
         title  = getattr(self._config, "app_title", "")
         result = [None]
 
@@ -594,7 +604,8 @@ class Bridge:
 
     def _restore_window_state(self) -> None:
         """Restore app window to the state captured before tiling."""
-        import sys, time
+        import sys
+        import time
         saved = getattr(self, "_saved_window_state", None)
         if not saved or not webview.windows:
             return
@@ -611,8 +622,8 @@ class Bridge:
                 # the window is at its restored position before the user sees it.
                 if sys.platform == "darwin":
                     try:
-                        from AppKit import NSApplication, NSRect, NSPoint, NSSize, NSScreen
                         import objc as _objc
+                        from AppKit import NSApplication, NSPoint, NSRect, NSScreen, NSSize
                         _nsw = NSApplication.sharedApplication().mainWindow()
                         if (_nsw and saved.get("x") is not None
                                  and saved.get("y") is not None):
@@ -646,7 +657,7 @@ class Bridge:
             pass
 
     # ── Export ───────────────────────────────────────────────────────────────
-    def export_resume_pdf(self, html: str, filename: str, out_dir: str = "") -> dict:
+    def export_pdf(self, html: str, filename: str, out_dir: str = "") -> dict:
         """Render HTML to a PDF via Playwright/Chromium and save it to disk.
 
         Writes to ``out_dir`` when given (the caller having picked a folder via
@@ -656,11 +667,11 @@ class Bridge:
 
         Runs Playwright in a subprocess to avoid greenlet/pywebview thread
         conflicts."""
+        import os
         import pathlib
         import subprocess
         import sys
         import tempfile
-        import os
 
         if out_dir:
             target = pathlib.Path(out_dir).expanduser()
