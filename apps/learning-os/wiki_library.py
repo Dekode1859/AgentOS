@@ -26,7 +26,12 @@ def _slug(text: str) -> str:
 
 class WikiLibrary:
     def __init__(self, workspace_root: Path):
-        self.wiki_root = Path(workspace_root) / "wiki"
+        # Resolved once, because _safe() resolves the paths it returns and
+        # page() computes them relative to this root. A workspace spelled
+        # differently from its resolved form — a Windows 8.3 name, the macOS
+        # /var → /private/var symlink, anything with .. in it — otherwise makes
+        # every page lookup fail with a confusing "not in the subpath" error.
+        self.wiki_root = (Path(workspace_root) / "wiki").resolve()
 
     # ── Public API ───────────────────────────────────────────────────────────
 
@@ -91,9 +96,13 @@ class WikiLibrary:
     # ── Internals ────────────────────────────────────────────────────────────
 
     def _safe(self, rel: str) -> Path:
+        # Containment is checked on the path hierarchy, not the string prefix:
+        # a sibling directory whose name merely starts with the root's name
+        # (root .../wiki, target .../wiki-backup) is outside the root even
+        # though its path string begins with it. Mirrors agentos.storage._safe.
         root = self.wiki_root.resolve()
         resolved = (root / str(rel or "")).resolve()
-        if not str(resolved).startswith(str(root)):
+        if resolved != root and root not in resolved.parents:
             raise ValueError(f"Path '{rel}' escapes the wiki root")
         return resolved
 

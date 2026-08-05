@@ -90,7 +90,7 @@ class CancellingRunner(FakeRunner):
 
 class KnowledgePipelineTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)  # lexicon-indexer is a daemon thread and may still be writing
         self.workspace = Path(self._tmpdir.name) / "workspace"
         self.pipeline = SourcePipeline(self.workspace)
         self.wiki = WikiLibrary(self.workspace)

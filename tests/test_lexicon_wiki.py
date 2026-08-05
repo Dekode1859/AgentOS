@@ -13,7 +13,7 @@ from wiki_library import WikiLibrary  # noqa: E402
 
 class WikiLibraryTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)  # lexicon-indexer is a daemon thread and may still be writing
         self.workspace = Path(self._tmpdir.name) / "workspace"
         self.wiki = self.workspace / "wiki"
         self.wiki.mkdir(parents=True, exist_ok=True)
@@ -26,6 +26,26 @@ class WikiLibraryTests(unittest.TestCase):
         path = self.wiki / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
+
+    def test_page_works_when_the_workspace_is_spelled_unresolved(self):
+        """Regression: page() mixed a resolved path with an unresolved root.
+
+        _safe() resolves what it returns, but wiki_root was stored as given, so
+        `relative_to` raised wherever the two spellings differ — a Windows 8.3
+        name (RUNNER~1), the macOS /var → /private/var symlink, or a `..` in
+        the path. Every page lookup failed there while passing locally.
+        """
+        self.write("alpha.md", "# Alpha\n\nStands alone.\n")
+        detour = self.workspace.parent / "detour"
+        detour.mkdir(exist_ok=True)
+
+        indirect = detour / ".." / self.workspace.name
+        self.assertNotEqual(indirect, self.workspace)
+        self.assertEqual(indirect.resolve(), self.workspace.resolve())
+
+        page = WikiLibrary(indirect).page("alpha.md")
+        self.assertTrue(page["ok"], page.get("error"))
+        self.assertIn("Alpha", page["page"]["content"])
 
     def test_index_extracts_titles_and_wikilinks(self):
         self.write("transformers.md", "# Transformers\n\nAttention is central. See [[Attention Notes]].\n")

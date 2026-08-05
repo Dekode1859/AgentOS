@@ -51,7 +51,7 @@ def make_bridge(tmp: Path) -> LexiconBridge:
 
 class LexiconBridgeTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)  # lexicon-indexer is a daemon thread and may still be writing
         self.tmp = Path(self._tmpdir.name)
         self.bridge = make_bridge(self.tmp)
 

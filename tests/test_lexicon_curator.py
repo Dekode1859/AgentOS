@@ -15,7 +15,7 @@ from wiki_library import WikiLibrary  # noqa: E402
 
 class CuratorTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)  # lexicon-indexer is a daemon thread and may still be writing
         self.workspace = Path(self._tmpdir.name) / "workspace"
         self.lexicon_sources = self.workspace / "wiki" / ".lexicon" / "sources"
         self.lexicon_sources.mkdir(parents=True, exist_ok=True)

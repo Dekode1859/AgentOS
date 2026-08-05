@@ -43,8 +43,15 @@ def ensure_dirs(root: Path, names: list[str]) -> Path:
 
 
 def list_dir(root: Path, subdir: str = "") -> list[dict]:
-    """List text files in a subdirectory (non-recursive)."""
-    root = Path(root)
+    """List text files in a subdirectory (non-recursive).
+
+    The root is resolved before use so the relative paths below are computed
+    against the same spelling the entries have. Callers hand us whatever they
+    were configured with, and a path that merely *resolves* to the root — a
+    Windows 8.3 name, a macOS ``/var`` → ``/private/var`` symlink, anything
+    containing ``..`` — would otherwise make ``relative_to`` raise.
+    """
+    root = Path(root).resolve()
     target = _safe(root, subdir) if subdir else root
     if not target.is_dir():
         return []

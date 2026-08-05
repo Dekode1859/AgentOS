@@ -115,6 +115,27 @@ class TestListing:
     def test_missing_directory_lists_empty_rather_than_raising(self, root):
         assert storage.list_dir(root, "does-not-exist") == []
 
+    def test_a_root_spelled_differently_from_its_resolved_form_still_lists(self, root):
+        """Regression: `relative_to` raised when the two spellings differed.
+
+        _safe() resolves the paths it returns, but the root was used as given.
+        Anywhere those differ — a Windows 8.3 short name (RUNNER~1), the macOS
+        /var → /private/var symlink, or a path containing `..` — listing a
+        subfolder blew up with "is not in the subpath of". Local runs never saw
+        it because their temp paths happen to already be canonical.
+        """
+        (root / "notes").mkdir()
+        (root / "notes" / "a.md").write_text("hi", encoding="utf-8")
+        (root.parent / "detour").mkdir(exist_ok=True)
+
+        indirect = root.parent / "detour" / ".." / root.name
+        assert indirect.resolve() == root.resolve()
+        assert indirect != root                      # same place, different spelling
+
+        entries = storage.list_dir(indirect, "notes")
+        assert [e["name"] for e in entries] == ["a.md"]
+        assert entries[0]["path"].replace("\\", "/") == "notes/a.md"
+
     def test_count_dir_counts_only_text_files(self, root):
         (root / "sub").mkdir()
         for name in ("a.md", "b.txt", "c.bin"):
