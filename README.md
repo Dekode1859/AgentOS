@@ -199,15 +199,21 @@ cd apps/learning-os && make install && make run
 ## Releasing
 
 The version lives in `agentos/__init__.py` and the build reads it from there.
-To cut a release: bump `__version__`, update [CHANGELOG.md](CHANGELOG.md), then
-push a matching tag.
+**Bumping that line is the release request.** When a change lands on `main`, CI
+compares the declared version against the existing tags:
 
-```bash
-git tag v0.2.0 && git push origin v0.2.0
-```
+| On `main` | Result |
+|-----------|--------|
+| `__version__` names a version with no tag | tests run, then `vX.Y.Z` is tagged and a GitHub Release is published with the wheel and sdist |
+| `__version__` unchanged | nothing — docs and test-only changes mint no versions |
 
-CI refuses a tag that disagrees with the package version, then builds and
-attaches the wheel and sdist to a GitHub Release.
+So a release is cut by editing one line in the same pull request as the change
+it describes, alongside a [CHANGELOG.md](CHANGELOG.md) entry. Nothing is
+published if lint or the test gate fails.
+
+Pushing a `vX.Y.Z` tag by hand still works as an escape hatch; CI refuses a tag
+that disagrees with the package version, since the artifact filenames would
+otherwise contradict the release name.
 
 ## License
 

@@ -4,8 +4,9 @@ All notable changes to AgentOS Core are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The version is single-sourced from `agentos/__init__.py`; release tags must
-match it (`v0.2.0` ↔ `__version__ = "0.2.0"`), which CI enforces.
+The version is single-sourced from `agentos/__init__.py`. Bumping it is what
+requests a release: when the change lands on `main`, CI tags the new version and
+publishes it. Leaving it alone releases nothing.
 
 ## [Unreleased]
 
@@ -93,13 +94,14 @@ First release packaged for installation from outside the repository.
   the root. Reads, writes, and deletes could therefore escape the workspace.
   Containment is now checked against the resolved path hierarchy.
 
-## [0.1.0]
+## 0.1.0 — never released
 
-Initial extraction of the runtime from the first application. Core↔App contract
+Recorded for continuity only: this version existed solely as shared source
+inside the monorepo, was never tagged, and no artifact was ever published for
+it. Initial extraction of the runtime from the first application. Core↔App contract
 (`AppConfig`, `WorkspaceFolder`, `run()`), desktop shell, OpenCode process
 lifecycle, storage primitives, provider abstraction, and the shared chat UI.
 Consumed only as shared source inside the monorepo.
 
 [Unreleased]: https://github.com/Dekode1859/AgentOS/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/Dekode1859/AgentOS/releases/tag/v0.2.0
-[0.1.0]: https://github.com/Dekode1859/AgentOS/releases/tag/v0.1.0
