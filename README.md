@@ -167,15 +167,26 @@ with different UIs and different agents. They consume Core as shared source via
 
 ```bash
 uv sync --group dev --group apps
-uv run pytest tests -q      # Core suite + the swap-invariant baseline
+uv run pytest tests -m "not frozen_app"   # what CI gates on
+uv run pytest tests                       # everything, including app internals
 uv run ruff check .
-uv build                    # wheel + sdist
+uv build                                  # wheel + sdist
 ```
 
 The `apps` group installs the frozen example apps' dependencies. They are not
-Core dependencies — they exist so the swap invariant is tested against both
-apps. Without them that half of the baseline skips, and a skipped baseline reads
-as green.
+Core dependencies — they are needed to *import* those apps, which the
+swap-invariant suite does on every run. Without them that half of the baseline
+skips, and a skipped baseline reads as green.
+
+**What CI gates on, and why.** Two things: Core's own suite, and the swap
+invariant. The `test_lexicon_*` suites are marked `frozen_app` and deselected.
+They characterize apps/learning-os's internal pipeline — file and URL import,
+wiki indexing, knowledge jobs — which is a multi-step filesystem workflow driven
+by a background thread. That makes them the most platform-sensitive code here
+and the least relevant to what the package promises, and the app they cover is
+frozen. Run them when you touch that app; do not block a Core release on them.
+The swap invariant still loads both apps on every CI run, so a Core change that
+would break a real application still fails the build.
 
 `tests/run_all.py` additionally runs the JS tests, which need `node`.
 

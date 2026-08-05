@@ -1,8 +1,20 @@
 # Tests
 
-Characterization tests that lock the current behavior of Core and the Job Search
-OS UI so the codebase can be refactored safely. They assert *what the apps do
-today* — if a refactor is meant to be behavior-preserving, these must stay green.
+Three kinds of suite, with different standing.
+
+| Suite | Covers | Gates CI |
+|-------|--------|----------|
+| `test_agentos_*`, `test_bridge`, `test_runtime_shell_api` | Core: the `AppConfig` contract, storage, paths, agents, providers, engine provisioning, process lifecycle, the JS↔Python bridge | yes |
+| `test_swap_invariant` | The boundary: both frozen apps loaded against the current Core | yes |
+| `test_lexicon_*` (marked `frozen_app`) | apps/learning-os's own pipeline — import, wiki indexing, knowledge jobs, curation | no |
+
+The `frozen_app` suites are excluded from the CI gate with
+`-m "not frozen_app"`. They exercise a multi-step filesystem pipeline driven by a
+background daemon thread, in an app that is no longer developed — so they are
+both the most platform-sensitive tests here and the least relevant to whether
+the `agentos` package is releasable. Run them when you change that app.
+
+Everything below still applies to how the suites work.
 
 ## Run everything
 

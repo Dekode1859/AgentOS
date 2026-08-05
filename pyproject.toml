@@ -87,7 +87,7 @@ exclude = [
 testpaths = ["tests"]
 addopts = "--strict-markers -q"
 markers = [
-    "app: characterization test that needs an application venv (bs4, pypdf, …); skipped when the dependency is absent",
+    "frozen_app: characterizes a frozen example app's own internals, not Core. Applied automatically by tests/conftest.py. Excluded from the CI gate (`-m 'not frozen_app'`) because it tests an app that is no longer developed; the swap-invariant suite still loads those apps on every run.",
 ]
 
 [tool.ruff]
