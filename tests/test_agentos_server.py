@@ -76,15 +76,16 @@ def test_stop_kills_grandchildren_not_just_the_direct_child(server, tmp_path):
     )
 
 
-# Binds a child to the server's lifetime, reports its pid, then waits to be
-# killed. Nothing here cooperates on shutdown — that is the point.
+# Binds a child to the server's lifetime, reports whether the binding took and
+# the child's pid, then waits to be killed. Nothing here cooperates on
+# shutdown — that is the point.
 BOUND_CHILD_SRC = """
 import subprocess, sys, tempfile, time
 from agentos.runtime.server import OpenCodeServer
 srv = OpenCodeServer(tempfile.mkdtemp(prefix="bound-"))
 child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
 srv._bind_to_lifetime(child)
-print(child.pid, flush=True)
+print(f"{child.pid} {'bound' if srv._job else 'unbound'}", flush=True)
 time.sleep(120)
 """
 
@@ -95,13 +96,24 @@ def test_engine_dies_even_when_the_app_is_force_killed():
 
     Without an OS-level binding the engine survives, reparented and holding its
     port — the exact orphan seen in the wild.
+
+    The binding is best effort by design: a host that already confines us to a
+    Job Object forbidding nesting (some CI runners, some sandboxes) will refuse
+    it, and Core falls back to cooperative shutdown. Where that happens there is
+    nothing to assert, so the test says so rather than failing or pretending.
     """
     proc = subprocess.Popen(
         [sys.executable, "-c", BOUND_CHILD_SRC],
         stdout=subprocess.PIPE, text=True,
     )
-    child_pid = int(proc.stdout.readline().strip())
+    child_pid_text, _, state = proc.stdout.readline().strip().partition(" ")
+    child_pid = int(child_pid_text)
     assert _alive(child_pid)
+
+    if state != "bound":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                       capture_output=True, check=False)
+        pytest.skip("this host refused the Job Object; binding is best effort")
 
     subprocess.run(["taskkill", "/F", "/PID", str(proc.pid)],
                    capture_output=True, check=False)

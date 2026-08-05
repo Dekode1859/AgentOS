@@ -49,6 +49,9 @@ jobs:
         run: uv run pytest tests -q
       - name: The swap invariant must actually have run, not skipped
         # A skipped baseline is worse than no baseline: it reads as green.
+        # Explicit bash: windows-latest defaults `run:` to PowerShell, where
+        # this script is not merely unportable but a syntax error.
+        shell: bash
         run: |
           uv run pytest tests/test_swap_invariant.py -q --no-header -rs 2>&1 | tee swap.txt
           if grep -qi "skipped" swap.txt; then
@@ -104,8 +107,12 @@ jobs:
           uv pip install --python consumer/bin/python \
             "agentos @ git+${{ github.server_url }}/${{ github.repository }}@${{ github.sha }}"
       - name: Smoke-test the installed package
+        # Must run from outside the checkout. With the repo as cwd, `import
+        # agentos` resolves to ./agentos/ (the source tree) rather than the
+        # installed package, and this job would verify nothing.
+        working-directory: /tmp
         run: |
-          consumer/bin/python - <<'PY'
+          "$GITHUB_WORKSPACE/consumer/bin/python" - <<'PY'
           import inspect
           from pathlib import Path
           import agentos
@@ -128,12 +135,15 @@ jobs:
       - name: The engine CLI must work from a bare install
         # Resolution and reporting only — install-engine would pull ~60 MB.
         # A missing engine must exit non-zero with the fix in the message.
+        # Outside the checkout, for the same shadowing reason as above.
+        working-directory: /tmp
         run: |
-          consumer/bin/agentos --version
-          consumer/bin/agentos engine-info || true
-          if consumer/bin/agentos engine-path; then
+          AGENTOS="$GITHUB_WORKSPACE/consumer/bin/agentos"
+          "$AGENTOS" --version
+          "$AGENTOS" engine-info || true
+          if "$AGENTOS" engine-path; then
             echo "::error::engine-path succeeded on a runner with no engine"
             exit 1
           fi
-          consumer/bin/agentos engine-path 2>&1 | grep -q "install-engine"
+          "$AGENTOS" engine-path 2>&1 | grep -q "install-engine"
           echo "engine CLI reports a missing engine correctly"

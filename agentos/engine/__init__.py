@@ -203,10 +203,16 @@ def _extract(archive: Path, dest_dir: Path) -> Path:
             except TypeError:                            # Python < 3.11.4
                 tf.extractall(dest_dir)
 
+    # Files only. On POSIX the binary is named `opencode`, and an archive that
+    # nests it under a directory of the same name would otherwise match the
+    # directory first — install() would then move a directory into the cache and
+    # every later resolve() would find something unrunnable. Shallowest match
+    # wins so a top-level binary beats a bundled copy deeper in the tree.
     for name in _BIN_NAMES:
-        found = next(dest_dir.rglob(name), None)
-        if found is not None:
-            return found
+        matches = sorted((p for p in dest_dir.rglob(name) if p.is_file()),
+                         key=lambda p: len(p.relative_to(dest_dir).parts))
+        if matches:
+            return matches[0]
     raise RuntimeError(f"No engine binary found inside {archive.name}")
 
 

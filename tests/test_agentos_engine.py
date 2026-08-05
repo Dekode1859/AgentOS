@@ -180,16 +180,24 @@ class TestVersionPolicy:
         assert engine.binary_version(tmp_path / "opencode") is None
 
 
-def _fake_release(dest: Path, asset: str, binary_name: str) -> bytes:
-    """Build an archive shaped like a real release asset."""
+def _fake_release(dest: Path, asset: str, binary_name: str,
+                  arcname: str | None = None) -> bytes:
+    """Build an archive shaped like a real release asset.
+
+    The published assets contain exactly one entry: the binary at the archive
+    root (verified against opencode-linux-x64.tar.gz and
+    opencode-darwin-arm64.zip). ``arcname`` overrides that to exercise layouts
+    the extractor must survive.
+    """
     payload = b"#!/bin/sh\necho 9.9.9\n"
+    name = arcname or binary_name
     buf = io.BytesIO()
     if asset.endswith(".zip"):
         with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr(f"opencode/bin/{binary_name}", payload)
+            zf.writestr(name, payload)
     else:
         with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-            info = tarfile.TarInfo(f"opencode/bin/{binary_name}")
+            info = tarfile.TarInfo(name)
             info.size = len(payload)
             tf.addfile(info, io.BytesIO(payload))
     return buf.getvalue()
@@ -231,6 +239,44 @@ class TestInstall:
         assert path.name == engine._binary_name()
         assert path.parent.name == "9.9.9"
         assert path.read_bytes().startswith(b"#!")
+
+    def test_a_binary_nested_under_a_same_named_directory_is_found(self, cached, monkeypatch):
+        """Regression: `rglob` matched the directory, not the binary inside it.
+
+        On POSIX the binary is named `opencode`, so an archive laying it out as
+        `opencode/bin/opencode` made _extract return the *directory*. install()
+        then moved a directory into the cache, and every later resolve() handed
+        back something that could not be executed. Windows never saw it: there
+        the binary is `opencode.exe`, which cannot collide with `opencode/`.
+        """
+        binary = engine._binary_name()
+        body = _fake_release(cached, engine.asset_name(), binary,
+                             arcname=f"opencode/bin/{binary}")
+        monkeypatch.setattr("requests.get", lambda *a, **k: FakeResponse(body))
+
+        path = engine.install("9.9.9")
+        assert path.is_file(), f"{path} is a directory, not the engine binary"
+        assert path.read_bytes().startswith(b"#!")
+
+    def test_a_top_level_binary_wins_over_a_deeper_copy(self, cached, monkeypatch):
+        binary = engine._binary_name()
+        asset = engine.asset_name()
+        payload = b"#!/bin/sh\necho top\n"
+        buf = io.BytesIO()
+        if asset.endswith(".zip"):
+            with zipfile.ZipFile(buf, "w") as zf:
+                zf.writestr(f"vendor/nested/{binary}", b"#!/bin/sh\necho nested\n")
+                zf.writestr(binary, payload)
+        else:
+            with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+                for arc, data in ((f"vendor/nested/{binary}", b"#!/bin/sh\necho nested\n"),
+                                  (binary, payload)):
+                    info = tarfile.TarInfo(arc)
+                    info.size = len(data)
+                    tf.addfile(info, io.BytesIO(data))
+        monkeypatch.setattr("requests.get", lambda *a, **k: FakeResponse(buf.getvalue()))
+
+        assert engine.install("9.9.9").read_bytes() == payload
 
     def test_reports_progress_while_downloading(self, cached, monkeypatch):
         body = _fake_release(cached, engine.asset_name(), engine._binary_name())
