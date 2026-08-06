@@ -18,14 +18,23 @@ what a folder means, branding.
 
 ## Install
 
+The distribution is named **`agentos-desktop`**; the package you import is
+`agentos`. They differ on purpose — see [Why the name differs](#why-the-name-differs).
+
 There is no PyPI release. Install from git, pinned to a tag:
 
 ```bash
-uv add "agentos @ git+https://github.com/Dekode1859/AgentOS@v0.2.0"
+uv add "agentos-desktop @ git+https://github.com/Dekode1859/AgentOS@v0.3.0"
 ```
 
 ```bash
-pip install "agentos @ git+https://github.com/Dekode1859/AgentOS@v0.2.0"
+pip install "agentos-desktop @ git+https://github.com/Dekode1859/AgentOS@v0.3.0"
+```
+
+Either way your code imports the same name it always did:
+
+```python
+from agentos import run, AppConfig, WorkspaceFolder
 ```
 
 For local development against a checkout beside your app:
@@ -33,14 +42,22 @@ For local development against a checkout beside your app:
 ```toml
 # your-app/pyproject.toml
 [project]
-dependencies = ["agentos"]
+dependencies = ["agentos-desktop"]
 
 [tool.uv.sources]
-agentos = { path = "../AgentOS", editable = true }
+agentos-desktop = { path = "../AgentOS", editable = true }
 ```
 
 Playwright is optional and only needed if your app drives a browser through
-`Bridge.browser_open`: install `agentos[browser]`.
+`Bridge.browser_open`: install `agentos-desktop[browser]`.
+
+### Why the name differs
+
+`agentos` on PyPI is an unrelated reinforcement-learning project, abandoned
+since 2022; `agentos-core` and `agentos-runtime` are two more unrelated
+projects. Depending on the bare name resolves to someone else's package rather
+than failing, so the distribution takes a name nobody else holds. Nothing about
+the API changes — every import, and the `agentos` console script, are unchanged.
 
 ### The execution engine
 

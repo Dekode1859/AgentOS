@@ -31,3 +31,9 @@ apps/*/workspace/*
 
 # Personal scratch — drafts, profile blurbs. Not part of the project.
 *_PROJECT_BLURB.md
+CLAUDE.md
+AGENTS.md
+.codex-artifacts
+.pytest_cache
+.ruff_cache
+.claude

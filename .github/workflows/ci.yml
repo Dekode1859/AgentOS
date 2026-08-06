@@ -109,7 +109,7 @@ jobs:
         run: |
           uv venv consumer
           uv pip install --python consumer/bin/python \
-            "agentos @ git+${{ github.server_url }}/${{ github.repository }}@${{ github.sha }}"
+            "agentos-desktop @ git+${{ github.server_url }}/${{ github.repository }}@${{ github.sha }}"
       - name: Smoke-test the installed package
         # Must run from outside the checkout. With the repo as cwd, `import
         # agentos` resolves to ./agentos/ (the source tree) rather than the

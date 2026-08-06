@@ -10,6 +10,29 @@ publishes it. Leaving it alone releases nothing.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-06
+
+### Changed
+- **Breaking (packaging only): the distribution is now `agentos-desktop`.** The
+  import name is unchanged — code still says `import agentos`, the wheel still
+  ships the `agentos` package, and the `agentos` console script keeps its name.
+  Only the string you depend on changes:
+
+  ```toml
+  dependencies = ["agentos-desktop[browser]"]
+
+  [tool.uv.sources]
+  agentos-desktop = { git = "https://github.com/Dekode1859/AgentOS", tag = "v0.3.0" }
+  ```
+
+  The bare name `agentos` on PyPI belongs to an unrelated reinforcement-learning
+  project, abandoned since 2022; `agentos-core` and `agentos-runtime` are held
+  by two further unrelated projects. A dependency on the bare name therefore
+  resolves *successfully* to someone else's package instead of failing, which is
+  the worst available failure mode. Publishing under a name nobody else holds
+  removes that hazard. No public API changed, so no application code changes
+  beyond the dependency string.
+
 ## [0.2.0] — 2026-08-05
 
 First release packaged for installation from outside the repository.
@@ -103,5 +126,6 @@ it. Initial extraction of the runtime from the first application. Core↔App con
 lifecycle, storage primitives, provider abstraction, and the shared chat UI.
 Consumed only as shared source inside the monorepo.
 
-[Unreleased]: https://github.com/Dekode1859/AgentOS/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Dekode1859/AgentOS/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Dekode1859/AgentOS/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Dekode1859/AgentOS/releases/tag/v0.2.0

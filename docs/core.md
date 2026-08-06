@@ -41,19 +41,25 @@ to `sys.path` and import. This is how the frozen in-repo apps consume Core.
 
 ```toml
 [project]
-dependencies = ["agentos"]
+dependencies = ["agentos-desktop"]
 
 [tool.uv.sources]
-agentos = { path = "../AgentOS", editable = true }
+agentos-desktop = { path = "../AgentOS", editable = true }
 ```
 
-or straight from git: `agentos @ git+https://github.com/Dekode1859/AgentOS@v0.2.0`
+or straight from git:
+`agentos-desktop @ git+https://github.com/Dekode1859/AgentOS@v0.3.0`
+
+The distribution is `agentos-desktop`; the import stays `agentos`. The bare name
+belongs to an unrelated project on PyPI, so depending on it silently installs
+the wrong package instead of failing.
 
 Swapping this Core for another that implements the same public API requires no
 change to any app, in either mode.
 
-Playwright is an optional extra (`agentos[browser]`) — Core never imports it at
-import time; it appears only inside the browser-agent subprocess payload.
+Playwright is an optional extra (`agentos-desktop[browser]`) — Core never
+imports it at import time; it appears only inside the browser-agent subprocess
+payload.
 
 Python 3.11 through 3.13 are supported and tested in CI.
 

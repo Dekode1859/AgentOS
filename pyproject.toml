@@ -3,7 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentos"
+# Distribution name, NOT the import name — code still says `import agentos`,
+# and [tool.hatch.build.targets.wheel] below still ships the `agentos` package.
+# The bare name `agentos` on PyPI belongs to an unrelated, abandoned 2022
+# reinforcement-learning project, and `agentos-core` / `agentos-runtime` are
+# taken by two others again. Resolving under the bare name installs someone
+# else's package, so the distribution carries a distinct name while the package
+# keeps the one the whole API is written in.
+name = "agentos-desktop"
 dynamic = ["version"]
 description = "A deterministic runtime for AI workflow apps — generic Core, zero domain knowledge"
 readme = "README.md"
