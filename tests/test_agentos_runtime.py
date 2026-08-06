@@ -46,6 +46,54 @@ class TestPaths:
         assert paths.is_bundled() is False
 
 
+class TestAppDataDir:
+    """Where a bundled app keeps user data, per platform.
+
+    Each branch is exercised on every host: getting this wrong does not raise,
+    it just writes to a directory the platform reserves for nothing, so only an
+    assertion catches it.
+    """
+
+    def test_windows_uses_localappdata(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths.sys, "platform", "win32")
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+        assert paths.app_data_dir("my-app") == tmp_path / "my-app"
+
+    def test_windows_falls_back_when_localappdata_is_unset(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths.sys, "platform", "win32")
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
+        monkeypatch.setattr(paths.Path, "home", staticmethod(lambda: tmp_path))
+        assert paths.app_data_dir("my-app") == tmp_path / "AppData" / "Local" / "my-app"
+
+    def test_macos_uses_application_support(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths.sys, "platform", "darwin")
+        monkeypatch.setattr(paths.Path, "home", staticmethod(lambda: tmp_path))
+        expected = tmp_path / "Library" / "Application Support" / "my-app"
+        assert paths.app_data_dir("my-app") == expected
+
+    def test_linux_honors_xdg_data_home(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths.sys, "platform", "linux")
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        assert paths.app_data_dir("my-app") == tmp_path / "my-app"
+
+    def test_linux_falls_back_to_local_share(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths.sys, "platform", "linux")
+        monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+        monkeypatch.setattr(paths.Path, "home", staticmethod(lambda: tmp_path))
+        assert paths.app_data_dir("my-app") == tmp_path / ".local" / "share" / "my-app"
+
+    def test_the_directory_is_created(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(paths.sys, "platform", "win32")
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "new"))
+        assert paths.app_data_dir("my-app").is_dir()
+
+    def test_no_platform_puts_data_under_a_foreign_convention(self, tmp_path, monkeypatch):
+        """The bug this replaced: every OS got the macOS path."""
+        monkeypatch.setattr(paths.sys, "platform", "win32")
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+        assert "Library" not in paths.app_data_dir("my-app").parts
+
+
 def _write_opencode(root, config: dict):
     (root / "opencode.json").write_text(json.dumps(config), encoding="utf-8")
 

@@ -6,7 +6,7 @@ the application supplies via ``AppConfig``. Core hardcodes no app name.
 
 Dev layout:    app_root / opencode.json, workspace/ ...
 Bundle layout: sys._MEIPASS (read-only extracted resources)
-               ~/Library/Application Support/<app_id>/ (writable user data)
+               app_data_dir(app_id) (writable user data, per-platform)
 """
 from __future__ import annotations
 
@@ -28,12 +28,32 @@ def resource_path(relative: str) -> Path:
 
 
 def app_data_dir(app_id: str) -> Path:
-    """Writable directory for an app's user data.
+    """Writable directory for an app's user data, in the platform's own place.
 
-    Dev: returns None-equivalent handled by caller (app_root is used instead).
-    Bundle: ~/Library/Application Support/<app_id>/
+    A bundled app cannot keep user data beside itself: an installer may put it
+    somewhere the user cannot write (``Program Files``, ``/Applications``), and
+    uninstalling would take the data with it. Every desktop platform nominates a
+    directory for this and they do not agree, so the choice is made here rather
+    than assumed. Using the wrong one does not raise — it silently scatters user
+    data to a path no OS convention knows about, and nothing looks wrong until
+    somebody goes looking for their files.
+
+        Windows   %LOCALAPPDATA%\\<app_id>
+        macOS     ~/Library/Application Support/<app_id>
+        Linux     $XDG_DATA_HOME/<app_id>, else ~/.local/share/<app_id>
+
+    Dev runs never reach this: ``project_root`` returns the app root instead.
     """
-    d = Path.home() / "Library" / "Application Support" / app_id
+    if sys.platform == "win32":
+        # Set on every supported Windows, but a service or a stripped
+        # environment can omit it; the documented default stands in.
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+
+    d = base / app_id
     d.mkdir(parents=True, exist_ok=True)
     return d
 

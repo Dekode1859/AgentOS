@@ -19,6 +19,7 @@ from .browser_agent import SCRIPT as _BROWSER_AGENT
 from .config import AppConfig
 from .runtime import paths
 from .runtime.server import OpenCodeServer
+from .runtime.subproc import python_c
 
 
 class Bridge:
@@ -122,7 +123,6 @@ class Bridge:
         thread, which sidesteps that entirely and behaves the same on macOS.
         """
         import subprocess
-        import sys
 
         script = (
             "import tkinter as tk\n"
@@ -136,7 +136,7 @@ class Bridge:
         )
         try:
             result = subprocess.run(
-                [sys.executable, "-c", script],
+                python_c(script),
                 capture_output=True, text=True, timeout=300,
             )
         except subprocess.TimeoutExpired:
@@ -238,7 +238,7 @@ class Bridge:
         try:
             profile_dir = str(self._workspace / "browser-profile")
             proc = subprocess.Popen(
-                [sys.executable, "-c", _BROWSER_AGENT, url, *bounds_args, profile_dir],
+                python_c(_BROWSER_AGENT, url, *bounds_args, profile_dir),
                 stdin=subprocess.PIPE,   # agent watches stdin; EOF → agent exits
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -325,7 +325,6 @@ class Bridge:
         # ── Otherwise scrape headless with the persistent profile ─────────────
         import json as _json
         import subprocess
-        import sys
         profile_dir = str(self._workspace / "browser-profile")
         script = (
             "import sys, json, pathlib\n"
@@ -355,7 +354,7 @@ class Bridge:
         )
         try:
             result = subprocess.run(
-                [sys.executable, "-c", script, url, profile_dir],
+                python_c(script, url, profile_dir),
                 capture_output=True, text=True, timeout=60,
             )
         except subprocess.TimeoutExpired:
@@ -670,7 +669,6 @@ class Bridge:
         import os
         import pathlib
         import subprocess
-        import sys
         import tempfile
 
         if out_dir:
@@ -719,7 +717,7 @@ class Bridge:
 
         try:
             result = subprocess.run(
-                [sys.executable, "-c", script],
+                python_c(script),
                 capture_output=True,
                 text=True,
                 timeout=60,

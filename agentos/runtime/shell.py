@@ -19,6 +19,7 @@ from pathlib import Path
 from ..config import AppConfig
 from . import paths
 from .server import OpenCodeServer
+from .subproc import dispatch_child
 
 
 def _parse_multipart_files(body: bytes, content_type: str) -> list[tuple[str, bytes]]:
@@ -193,6 +194,12 @@ def _start_ui_server(ui_dir: str, bridge) -> int:
 
 def run(config: AppConfig):
     """Boot an AgentOS application. Blocks until the window is closed."""
+    # Before anything else, and before a window exists: in a frozen build this
+    # process may be a child Core spawned to run a snippet, not the app. It has
+    # to find that out here — the alternative is booting a second copy of the
+    # application, which spawns a third. See runtime/subproc.py.
+    dispatch_child()
+
     import webview  # imported late so non-GUI tooling can import agentos cleanly
 
     from ..bridge import Bridge  # late import to avoid a cycle

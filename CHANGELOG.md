@@ -10,6 +10,22 @@ the new version and publishes it. Leaving it alone releases nothing.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-08-07
+
+### Fixed
+- **A bundled app wrote its user data to a macOS path on every platform.**
+  `app_data_dir` — where a frozen app keeps its workspace, `opencode.json`, and
+  `.opencode-home`, since it cannot write beside itself — was hardcoded to
+  `~/Library/Application Support/<app_id>`. On Windows that resolved to
+  `C:\Users\<user>\Library\Application Support\<app_id>`, a directory no
+  convention owns, and on Linux likewise. It never raised: the directory was
+  created on demand, so a packaged app appeared to work while scattering user
+  data somewhere nobody would look for it, and an OS-level backup or migration
+  would skip it. Now `%LOCALAPPDATA%` on Windows, `$XDG_DATA_HOME` (falling back
+  to `~/.local/share`) on Linux, and the unchanged Application Support path on
+  macOS. Every branch is asserted on every host, since picking the wrong one
+  produces no error to catch.
+
 ## [0.3.0] — 2026-08-06
 
 ### Changed
@@ -134,6 +150,7 @@ it. Initial extraction of the runtime from the first application. Core↔App con
 lifecycle, storage primitives, provider abstraction, and the shared chat UI.
 Consumed only as shared source inside the monorepo.
 
-[Unreleased]: https://github.com/Dekode1859/AgentOS/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Dekode1859/AgentOS/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Dekode1859/AgentOS/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Dekode1859/AgentOS/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Dekode1859/AgentOS/releases/tag/v0.2.0
