@@ -11,7 +11,7 @@ build-backend = "hatchling.build"
 # else's package, so the distribution carries a distinct name while the package
 # keeps the one the whole API is written in.
 name = "agentos-desktop"
-dynamic = ["version"]
+version = "0.3.0"
 description = "A deterministic runtime for AI workflow apps — generic Core, zero domain knowledge"
 readme = "README.md"
 license = "MIT"
@@ -68,11 +68,6 @@ apps = [
     "pypdf>=5.0.0",
     "python-docx>=1.1.0",
 ]
-
-# Single source of truth: the version lives in the package and the build reads
-# it from there. Bump __version__ and the wheel follows.
-[tool.hatch.version]
-path = "agentos/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentos"]

@@ -4,9 +4,9 @@ All notable changes to AgentOS Core are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The version is single-sourced from `agentos/__init__.py`. Bumping it is what
-requests a release: when the change lands on `main`, CI tags the new version and
-publishes it. Leaving it alone releases nothing.
+The version is single-sourced from `project.version` in `pyproject.toml`.
+Bumping it is what requests a release: when the change lands on `main`, CI tags
+the new version and publishes it. Leaving it alone releases nothing.
 
 ## [Unreleased]
 
@@ -32,6 +32,14 @@ publishes it. Leaving it alone releases nothing.
   the worst available failure mode. Publishing under a name nobody else holds
   removes that hazard. No public API changed, so no application code changes
   beyond the dependency string.
+- **The version is now single-sourced from `pyproject.toml`.** It used to live
+  in `agentos/__init__.py`, with the build reading it out via
+  `[tool.hatch.version]`; that relationship is now inverted.
+  `agentos.__version__` is derived at import from the installed distribution's
+  metadata, so it reports the version the running copy was *installed from*
+  instead of a hardcoded literal that a working tree can silently outrun. The
+  attribute keeps its name, type, and meaning, so nothing that reads it changes.
+  Uninstalled source trees fall back to reading the adjacent `pyproject.toml`.
 
 ## [0.2.0] — 2026-08-05
 

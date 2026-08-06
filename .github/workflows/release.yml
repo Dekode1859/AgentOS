@@ -2,7 +2,7 @@ name: Release
 
 # Two ways in, one path out.
 #
-# Normal flow: a change lands on main. If agentos/__init__.py declares a version
+# Normal flow: a change lands on main. If pyproject.toml declares a version
 # that has no tag yet, this tags it and publishes. If the version is unchanged —
 # a docs fix, a test tweak — nothing happens. The version bump *is* the release
 # request, made in the same pull request as the change it describes.
@@ -42,9 +42,9 @@ jobs:
       - name: Work out what, if anything, to release
         id: plan
         run: |
-          VERSION=$(python -c "import re,pathlib; \
-            print(re.search(r'__version__ = \"([^\"]+)\"', \
-            pathlib.Path('agentos/__init__.py').read_text()).group(1))")
+          VERSION=$(python -c "import tomllib,pathlib; \
+            print(tomllib.loads(pathlib.Path('pyproject.toml') \
+            .read_text())['project']['version'])")
           TAG="v$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
@@ -53,7 +53,7 @@ jobs:
             # Released by tag: the tag must agree with the package, or the
             # artifact filenames would contradict the release name.
             if [ "${{ github.ref_name }}" != "$TAG" ]; then
-              echo "::error::Tag ${{ github.ref_name }} does not match agentos.__version__ ($VERSION)."
+              echo "::error::Tag ${{ github.ref_name }} does not match project.version in pyproject.toml ($VERSION)."
               exit 1
             fi
             echo "release=true"   >> "$GITHUB_OUTPUT"

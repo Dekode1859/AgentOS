@@ -215,14 +215,18 @@ cd apps/learning-os && make install && make run
 
 ## Releasing
 
-The version lives in `agentos/__init__.py` and the build reads it from there.
+The version lives in `pyproject.toml` (`project.version`) and nowhere else.
 **Bumping that line is the release request.** When a change lands on `main`, CI
 compares the declared version against the existing tags:
 
 | On `main` | Result |
 |-----------|--------|
-| `__version__` names a version with no tag | tests run, then `vX.Y.Z` is tagged and a GitHub Release is published with the wheel and sdist |
-| `__version__` unchanged | nothing — docs and test-only changes mint no versions |
+| `project.version` names a version with no tag | tests run, then `vX.Y.Z` is tagged and a GitHub Release is published with the wheel and sdist |
+| `project.version` unchanged | nothing — docs and test-only changes mint no versions |
+
+`agentos.__version__` is derived, not declared: it reads the installed
+distribution's metadata, so it reports the version the running copy was
+*installed from* rather than whatever a working tree happens to say now.
 
 So a release is cut by editing one line in the same pull request as the change
 it describes, alongside a [CHANGELOG.md](CHANGELOG.md) entry. Nothing is

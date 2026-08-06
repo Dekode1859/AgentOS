@@ -3,7 +3,8 @@ revision = 3
 requires-python = ">=3.11"
 
 [[package]]
-name = "agentos"
+name = "agentos-desktop"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "pywebview" },
