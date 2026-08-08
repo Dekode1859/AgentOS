@@ -203,23 +203,5 @@ class TestServerRestartMethods(BridgeTestBase):
         self.assertIn("disk full", res["error"])
 
 
-@unittest.skipUnless(sys.platform == "win32", "tile layout queries the OS work area")
-class TestTileLayoutWindows(BridgeTestBase):
-    def test_side_by_side_geometry(self):
-        app_b, brw_b = self.bridge._tile_layout_windows()
-        for b in (app_b, brw_b):
-            for k in ("x", "y", "w", "h"):
-                self.assertIn(k, b)
-        # Browser sits to the right of the app, same width split.
-        self.assertEqual(brw_b["x"], app_b["x"] + app_b["w"])
-        self.assertEqual(app_b["w"], brw_b["w"])
-        self.assertGreater(app_b["w"], 0)
-
-    def test_get_tile_layout_dispatches(self):
-        app_b, brw_b = self.bridge._get_tile_layout()
-        self.assertIsNotNone(app_b)
-        self.assertIsNotNone(brw_b)
-
-
 if __name__ == "__main__":
     unittest.main(verbosity=2)

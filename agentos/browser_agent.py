@@ -15,10 +15,33 @@ browser exits when the parent app dies.
 """
 
 SCRIPT = r'''
-import sys, json, queue as _q, threading, os
+import sys, json, queue as _q, threading, os, shutil
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
+
+def _system_chrome_available():
+    """Return whether the machine has a Chrome installation Playwright can use."""
+    names = ['google-chrome', 'google-chrome-stable', 'chrome']
+    if sys.platform == 'win32':
+        local = os.environ.get('LOCALAPPDATA', '')
+        program_files = os.environ.get('PROGRAMFILES', '')
+        program_files_x86 = os.environ.get('PROGRAMFILES(X86)', '')
+        candidates = [
+            os.path.join(local, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+            os.path.join(program_files, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+            os.path.join(program_files_x86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        ]
+        return any(os.path.isfile(p) for p in candidates) or bool(shutil.which('chrome.exe'))
+    if sys.platform == 'darwin':
+        candidates = [
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            os.path.expanduser('~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+        ]
+        return any(os.path.isfile(p) for p in candidates)
+    return any(shutil.which(name) for name in names)
+
+_browser_channel = 'chrome' if _system_chrome_available() else None
 
 _cmd_q, _res_q = _q.Queue(), _q.Queue()
 # Set by Playwright's event thread when the active page is closed by the user.
@@ -94,36 +117,7 @@ def _watch_stdin():
 threading.Thread(target=_watch_stdin, daemon=True).start()
 
 _start_url = sys.argv[1] if len(sys.argv) > 1 else "about:blank"
-# Args layout: url [left top width height] [user_data_dir]
-# 5 remaining = bounds + user_data_dir; 4 = bounds only (legacy); 1 = user_data_dir only
-_tile_bounds = None
-_user_data_dir = ''
-_remaining = sys.argv[2:]
-if len(_remaining) == 5:
-    try:
-        _tile_bounds = {
-            "left":        int(_remaining[0]),
-            "top":         int(_remaining[1]),
-            "width":       int(_remaining[2]),
-            "height":      int(_remaining[3]),
-            "windowState": "normal",
-        }
-    except (ValueError, IndexError):
-        pass
-    _user_data_dir = _remaining[4]
-elif len(_remaining) == 4:
-    try:
-        _tile_bounds = {
-            "left":        int(_remaining[0]),
-            "top":         int(_remaining[1]),
-            "width":       int(_remaining[2]),
-            "height":      int(_remaining[3]),
-            "windowState": "normal",
-        }
-    except (ValueError, IndexError):
-        pass
-elif len(_remaining) == 1:
-    _user_data_dir = _remaining[0]
+_user_data_dir = sys.argv[2] if len(sys.argv) > 2 else ''
 
 if _user_data_dir:
     import pathlib as _pl
@@ -146,7 +140,7 @@ with sync_playwright() as _pw:
         _ctx = _pw.chromium.launch_persistent_context(
             _user_data_dir,
             headless=False,
-            channel='chrome',
+            channel=_browser_channel,
             viewport=None,
             ignore_default_args=['--enable-automation'],
             args=[
@@ -162,20 +156,6 @@ with sync_playwright() as _pw:
         _page = _ctx.new_page()
     _attach_page_listener(_page)
 
-    # Position the Chromium window via CDP when tiling bounds were supplied.
-    if _tile_bounds:
-        import time as _t
-        _t.sleep(0.15)  # brief pause for the OS window to appear
-        try:
-            _cdp = _ctx.new_cdp_session(_page)
-            _ti  = _cdp.send("Target.getTargetInfo", {})
-            _wi  = _cdp.send("Browser.getWindowForTarget",
-                             {"targetId": _ti["targetInfo"]["targetId"]})
-            _cdp.send("Browser.setWindowBounds",
-                      {"windowId": _wi["windowId"], "bounds": _tile_bounds})
-        except Exception:
-            pass
-
     _server = HTTPServer(("127.0.0.1", 0), _H)
     threading.Thread(target=_server.serve_forever, daemon=True).start()
 
@@ -184,6 +164,10 @@ with sync_playwright() as _pw:
 
     try:
         _page.goto(_start_url, wait_until="domcontentloaded", timeout=20000)
+    except Exception:
+        pass
+    try:
+        _page.bring_to_front()
     except Exception:
         pass
 

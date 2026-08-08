@@ -171,12 +171,11 @@ class Bridge:
 
     def browser_open(self, url: str) -> dict:
         """Launch a headed Playwright Chromium browser at the given URL.
-        Saves the current app window state, tiles both windows side-by-side,
-        and returns {ok, port} for the local HTTP control API."""
+        Leaves the app window untouched and returns {ok, port} for the local
+        HTTP control API. The browser opens at its platform default size.
+        """
         import json
         import subprocess
-        import sys
-        import time
 
         self._browser_close_internal()
 
@@ -186,59 +185,11 @@ class Bridge:
             atexit.register(self._browser_close_internal)
             self._browser_atexit_registered = True
 
-        # ── Window tiling ─────────────────────────────────────────────────────
-        bounds_args: list[str] = []
-        if webview.windows:
-            try:
-                self._saved_window_state = self._get_window_state()
-                app_b, brw_b = self._get_tile_layout()
-                if app_b and brw_b:
-                    win = webview.windows[0]
-                    # macOS fullscreen lives in its own Space — exit it first.
-                    if self._saved_window_state.get("fullscreen") and sys.platform == "darwin":
-                        win.toggle_fullscreen()
-                        time.sleep(0.8)   # wait for exit-fullscreen animation
-                    # On macOS, pywebview's resize()/move() dispatch to the main
-                    # thread asynchronously — they return before the frame actually
-                    # moves.  Use objc.callOnMainThread so the frame is set
-                    # synchronously before Chrome reads the layout half a second later.
-                    if sys.platform == "darwin":
-                        try:
-                            import objc as _objc
-                            from AppKit import NSApplication, NSPoint, NSRect, NSSize
-                            _nsw = NSApplication.sharedApplication().mainWindow()
-                            if _nsw:
-                                _sf = (_nsw.screen() or
-                                       __import__('AppKit').NSScreen.mainScreen()).frame()
-                                _ns_y = _sf.size.height - app_b["y"] - app_b["h"]
-                                _frame = NSRect(NSPoint(app_b["x"], _ns_y),
-                                                NSSize(app_b["w"], app_b["h"]))
-                                _objc.callOnMainThread(
-                                    _nsw.setFrame_display_animate_, _frame, True, False
-                                )
-                            else:
-                                win.resize(app_b["w"], app_b["h"])
-                                win.move(app_b["x"], app_b["y"])
-                        except Exception:
-                            win.resize(app_b["w"], app_b["h"])
-                            win.move(app_b["x"], app_b["y"])
-                    else:
-                        win.resize(app_b["w"], app_b["h"])
-                        win.move(app_b["x"], app_b["y"])
-                    time.sleep(0.15)  # let compositor settle before Chrome positions itself
-                    bounds_args = [
-                        str(brw_b["x"]), str(brw_b["y"]),
-                        str(brw_b["w"]), str(brw_b["h"]),
-                    ]
-            except Exception:
-                self._saved_window_state = None
-                bounds_args = []
-
-        # ── Launch subprocess ─────────────────────────────────────────────────
+        # Launch the browser in its own process at the platform default size.
         try:
             profile_dir = str(self._workspace / "browser-profile")
             proc = subprocess.Popen(
-                python_c(_BROWSER_AGENT, url, *bounds_args, profile_dir),
+                python_c(_BROWSER_AGENT, url, profile_dir),
                 stdin=subprocess.PIPE,   # agent watches stdin; EOF → agent exits
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -247,18 +198,15 @@ class Bridge:
             line = proc.stdout.readline()
             if not line:
                 err = proc.stderr.read(500)
-                self._restore_window_state()
                 return {"ok": False, "error": err or "browser agent failed to start"}
             info = json.loads(line.strip())
             if not info.get("ok"):
                 proc.terminate()
-                self._restore_window_state()
                 return info
             self._browser_proc = proc
             self._browser_port = info["port"]
-            # Watch for subprocess exit on a background thread so we can
-            # restore the app window and notify JS the instant it dies —
-            # rather than waiting up to 5 s for the health poll to fire.
+            # Watch for subprocess exit so the UI is notified immediately
+            # rather than waiting for the health poll.
             import threading
             threading.Thread(
                 target=self._watch_browser_exit,
@@ -267,7 +215,6 @@ class Bridge:
             ).start()
             return {"ok": True, "port": info["port"]}
         except Exception as e:
-            self._restore_window_state()
             return {"ok": False, "error": str(e)}
 
     def browser_close(self) -> dict:
@@ -327,9 +274,22 @@ class Bridge:
         import subprocess
         profile_dir = str(self._workspace / "browser-profile")
         script = (
-            "import sys, json, pathlib\n"
+            "import sys, json, pathlib, os, shutil\n"
             "from playwright.sync_api import sync_playwright\n"
             "url, user_dir = sys.argv[1], sys.argv[2]\n"
+            "def _system_chrome_available():\n"
+            "    names = ['google-chrome', 'google-chrome-stable', 'chrome']\n"
+            "    if sys.platform == 'win32':\n"
+            "        local = os.environ.get('LOCALAPPDATA', '')\n"
+            "        pf = os.environ.get('PROGRAMFILES', '')\n"
+            "        pf86 = os.environ.get('PROGRAMFILES(X86)', '')\n"
+            "        paths = [os.path.join(local, 'Google', 'Chrome', 'Application', 'chrome.exe'), os.path.join(pf, 'Google', 'Chrome', 'Application', 'chrome.exe'), os.path.join(pf86, 'Google', 'Chrome', 'Application', 'chrome.exe')]\n"
+            "        return any(os.path.isfile(p) for p in paths) or bool(shutil.which('chrome.exe'))\n"
+            "    if sys.platform == 'darwin':\n"
+            "        paths = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', os.path.expanduser('~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')]\n"
+            "        return any(os.path.isfile(p) for p in paths)\n"
+            "    return any(shutil.which(name) for name in names)\n"
+            "_browser_channel = 'chrome' if _system_chrome_available() else None\n"
             "lock = pathlib.Path(user_dir) / 'SingletonLock'\n"
             "try:\n"
             "    if lock.exists() or lock.is_symlink(): lock.unlink()\n"
@@ -337,7 +297,7 @@ class Bridge:
             "pathlib.Path(user_dir).mkdir(parents=True, exist_ok=True)\n"
             "with sync_playwright() as pw:\n"
             "    ctx = pw.chromium.launch_persistent_context(\n"
-            "        user_dir, headless=True, channel='chrome',\n"
+            "        user_dir, headless=True, channel=_browser_channel,\n"
             "        args=['--disable-blink-features=AutomationControlled'])\n"
             "    page = ctx.pages[0] if ctx.pages else ctx.new_page()\n"
             "    try:\n"
@@ -461,197 +421,20 @@ class Bridge:
                 pass
             self._browser_proc = None
             self._browser_port = None
-            self._restore_window_state()
         return {"ok": True}
 
     def _watch_browser_exit(self, proc) -> None:
-        """Block until the browser agent subprocess exits.
-        Restores the app window immediately and pushes a JS event so the UI
-        updates without waiting for the health-poll interval."""
+        """Block until the browser agent subprocess exits and notify the UI."""
         try:
             proc.wait()
         except Exception:
             pass
-        # Restore window immediately on this thread — fast, no JS roundtrip.
-        self._restore_window_state()
         # Notify JS so the UI re-renders (shows "Open Application" button, etc.).
         try:
             if webview.windows:
                 webview.windows[0].evaluate_js(
                     'typeof _onBrowserProcessDied === "function" && _onBrowserProcessDied()'
                 )
-        except Exception:
-            pass
-
-    # ── Window state helpers ──────────────────────────────────────────────────
-
-    def _get_tile_layout(self):
-        """Return (app_bounds, browser_bounds) dicts for side-by-side tiling.
-        Bounds use top-left origin, consistent with pywebview move/resize and
-        CDP Browser.setWindowBounds. Returns (None, None) on failure."""
-        import sys
-        try:
-            if sys.platform == "darwin":
-                return self._tile_layout_macos()
-            elif sys.platform == "win32":
-                return self._tile_layout_windows()
-            else:
-                return self._tile_layout_linux()
-        except Exception:
-            return None, None
-
-    @staticmethod
-    def _split_halves(x, y, w, h, *, exact_remainder=False):
-        """Split a work area into left (app) and right (browser) tiles.
-
-        ``exact_remainder`` gives the browser ``w - hw`` so the two windows are
-        perfectly contiguous (used on macOS); otherwise both get equal halves.
-        """
-        hw = w // 2
-        bw = (w - hw) if exact_remainder else hw
-        return ({"x": x,      "y": y, "w": hw, "h": h},
-                {"x": x + hw, "y": y, "w": bw, "h": h})
-
-    def _tile_layout_macos(self):
-        from AppKit import NSScreen
-        sf = NSScreen.mainScreen().frame()         # full screen (bottom-left origin)
-        vf = NSScreen.mainScreen().visibleFrame()  # excludes menu-bar + dock
-        total_h = sf.size.height
-        # Convert bottom-left NSScreen origin → top-left (pywebview + CDP convention)
-        x = int(vf.origin.x)
-        y = int(total_h - vf.origin.y - vf.size.height)
-        w = int(vf.size.width)
-        h = int(vf.size.height)
-        return self._split_halves(x, y, w, h, exact_remainder=True)
-
-    def _tile_layout_windows(self):
-        import ctypes
-        import ctypes.wintypes
-        # SPI_GETWORKAREA (0x30) — screen area excluding the taskbar
-        rect = ctypes.wintypes.RECT()
-        ctypes.windll.user32.SystemParametersInfoW(0x30, 0, ctypes.byref(rect), 0)
-        x, y = rect.left, rect.top
-        w, h = rect.right - rect.left, rect.bottom - rect.top
-        return self._split_halves(x, y, w, h)
-
-    def _tile_layout_linux(self):
-        import re
-        import subprocess
-        out = subprocess.check_output(["xrandr", "--current"], timeout=3).decode()
-        m   = re.search(r"current (\d+) x (\d+)", out)
-        if not m:
-            return None, None
-        return self._split_halves(0, 0, int(m.group(1)), int(m.group(2)))
-
-    def _get_window_state(self) -> dict:
-        """Capture app window geometry + fullscreen flag for later restoration."""
-        import sys
-        state: dict = {"fullscreen": False, "maximized": False,
-                       "x": None, "y": None, "w": None, "h": None}
-        if not webview.windows:
-            return state
-        try:
-            if sys.platform == "darwin":
-                from AppKit import NSApplication, NSScreen
-                ns_win = NSApplication.sharedApplication().mainWindow()
-                if ns_win:
-                    f       = ns_win.frame()
-                    total_h = NSScreen.mainScreen().frame().size.height
-                    state["fullscreen"] = bool(ns_win.styleMask() & (1 << 14))
-                    state["x"] = int(f.origin.x)
-                    # Convert NSWindow bottom-left y → top-left y
-                    state["y"] = int(total_h - f.origin.y - f.size.height)
-                    state["w"] = int(f.size.width)
-                    state["h"] = int(f.size.height)
-            elif sys.platform == "win32":
-                import ctypes
-                import ctypes.wintypes
-                hwnd = self._get_win32_hwnd()
-                if hwnd:
-                    rect = ctypes.wintypes.RECT()
-                    ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-                    state["x"]         = rect.left
-                    state["y"]         = rect.top
-                    state["w"]         = rect.right  - rect.left
-                    state["h"]         = rect.bottom - rect.top
-                    state["maximized"] = bool(ctypes.windll.user32.IsZoomed(hwnd))
-        except Exception:
-            pass
-        return state
-
-    def _get_win32_hwnd(self):
-        """Find the main app HWND by matching window title (Windows only)."""
-        import ctypes
-        import ctypes.wintypes
-        title  = getattr(self._config, "app_title", "")
-        result = [None]
-
-        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
-        def _cb(hwnd, _):
-            if ctypes.windll.user32.IsWindowVisible(hwnd):
-                n = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
-                if n:
-                    buf = ctypes.create_unicode_buffer(n + 1)
-                    ctypes.windll.user32.GetWindowTextW(hwnd, buf, n + 1)
-                    if title in buf.value:
-                        result[0] = hwnd
-                        return False
-            return True
-
-        ctypes.windll.user32.EnumWindows(_cb, 0)
-        return result[0]
-
-    def _restore_window_state(self) -> None:
-        """Restore app window to the state captured before tiling."""
-        import sys
-        import time
-        saved = getattr(self, "_saved_window_state", None)
-        if not saved or not webview.windows:
-            return
-        self._saved_window_state = None
-        try:
-            win = webview.windows[0]
-            if saved.get("fullscreen"):
-                time.sleep(0.2)          # let any close animations settle
-                win.toggle_fullscreen()
-            elif saved.get("maximized"):
-                win.maximize()
-            elif saved.get("w") and saved.get("h"):
-                # Same synchronous-frame trick used in browser_open — ensures
-                # the window is at its restored position before the user sees it.
-                if sys.platform == "darwin":
-                    try:
-                        import objc as _objc
-                        from AppKit import NSApplication, NSPoint, NSRect, NSScreen, NSSize
-                        _nsw = NSApplication.sharedApplication().mainWindow()
-                        if (_nsw and saved.get("x") is not None
-                                 and saved.get("y") is not None):
-                            _sf = (_nsw.screen() or NSScreen.mainScreen()).frame()
-                            _ns_y = _sf.size.height - saved["y"] - saved["h"]
-                            _frame = NSRect(NSPoint(saved["x"], _ns_y),
-                                            NSSize(saved["w"], saved["h"]))
-                            _objc.callOnMainThread(
-                                _nsw.setFrame_display_animate_, _frame, True, False
-                            )
-                        else:
-                            win.resize(saved["w"], saved["h"])
-                            win.move(saved["x"], saved["y"])
-                    except Exception:
-                        win.resize(saved["w"], saved["h"])
-                        if saved.get("x") is not None and saved.get("y") is not None:
-                            win.move(saved["x"], saved["y"])
-                else:
-                    win.resize(saved["w"], saved["h"])
-                    if saved.get("x") is not None and saved.get("y") is not None:
-                        win.move(saved["x"], saved["y"])
-            # Bring our own app window to front so the restored window surfaces
-            # immediately without the user having to click it.
-            if sys.platform == "darwin":
-                try:
-                    from AppKit import NSApplication
-                    NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
-                except Exception:
-                    pass
         except Exception:
             pass
 
